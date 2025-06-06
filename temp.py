@@ -3,7 +3,7 @@ import math
 import time
 
 # Thermistor setup (connected to pin 34)
-adc = ADC(Pin(34))
+adc = ADC(Pin(39))
 adc.atten(ADC.ATTN_11DB)  # Full range: 0–3.3V
 
 # Constants
