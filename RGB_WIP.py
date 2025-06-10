@@ -12,7 +12,8 @@ Vin = 3.3                      # Input voltage for the sensor
 Vout = 0
 R1 = 10000.0                     # Known resistance value (in the circuit)
 R2 = 0
-samples = 5000                  # Number of ADC samples (iterations) for calculating the avg resistance
+samples = 5000
+                  # Number of ADC samples (iterations) for calculating the avg resistance
 
 led15 = Pin(15, Pin.OUT)        # An instance of the Pin class with GPIO pins 26 and 32 set as output pins.
                                 # This can be used to control LEDs or other devices
