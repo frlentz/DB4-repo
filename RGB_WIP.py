@@ -4,6 +4,7 @@ import _thread as thread
 import tcs34725
 import time
 
+
 #Variables for salinity sensor
 raw = 0
 analogPin = 34                  # Setting the analog pin number for ADC
