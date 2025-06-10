@@ -22,6 +22,7 @@ adc = ADC(Pin(analogPin))       # An instance of a class, initialized using anal
 adc.width(ADC.WIDTH_12BIT)
 adc.atten(ADC.ATTN_11DB)
 
+
 #Class for motor (pump)
 class MOTOR:
 
