@@ -2,73 +2,33 @@
 # It starts and stops a pump by controlling the relay.
 # Adjust the GPIO pin if necessary.
 
-from machine import Pin, I2C
+from machine import Pin
 from time import sleep
-import ssd1306
 
-# === Relay setup ===
+# Relay control pin
 relay_pin = Pin(26, Pin.OUT)
 
 def start_pump():
-    relay_pin.off()  # switch from .on() to .off()
+    relay_pin.off()  # Use .off() if your relay is active LOW
     print("Pump started")
-    update_display("ON")
 
 def stop_pump():
-    relay_pin.on()  # switch from .off() to .on()
+    relay_pin.on()   # Use .on() to turn OFF if relay is active LOW
     print("Pump stopped")
-    update_display("OFF")
 
-
-# === Command Interface ===
-# This code is designed to run on a microcontroller with a relay connected to GPIO 26.
-# It starts and stops a pump by controlling the relay.
-# Adjust the GPIO pin if necessary.
-
-from machine import Pin, I2C
-from time import sleep
-import ssd1306
-
-# === Relay setup ===
-relay_pin = Pin(26, Pin.OUT)
-
-def start_pump():
-    relay_pin.off()  # switch from .on() to .off()
-    print("Pump started")
-    update_display("ON")
-
-def stop_pump():
-    relay_pin.on()  # switch from .off() to .on()
-    print("Pump stopped")
-    update_display("OFF")
-
-# === OLED setup ===
-# I2C: SDA = 21, SCL = 22 (change if needed)
-i2c = I2C(scl=Pin(22), sda=Pin(21))
-oled = ssd1306.SSD1306_I2C(128, 64, i2c)
-
-def update_display(status):
-    oled.fill(0)  # Clear screen
-    oled.text("Pump Status:", 0, 10)
-    oled.text("[ {} ]".format(status), 0, 30)
-    oled.show()
-
-
-# === Command Interface ===
 def main():
-    update_display("OFF")  # Default display
     while True:
-        cmd = input("Enter 'start', 'stop', or 'exit': ").strip().lower()
-        if cmd == "start":
+        command = input("Type 'start', 'stop', or 'exit': ").strip().lower()
+        if command == 'start':
             start_pump()
-        elif cmd == "stop":
+        elif command == 'stop':
             stop_pump()
-        elif cmd == "exit":
+        elif command == 'exit':
             stop_pump()
-            print("Exiting.")
+            print("Exiting program.")
             break
         else:
-            print("Unknown command.")
+            print("Invalid command.")
 
 if __name__ == "__main__":
     main()
