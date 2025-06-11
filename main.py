@@ -1,128 +1,84 @@
 import network
 import time
 import socket
-from machine import Pin
+from machine import Pin, I2C
 from umqttsimple import MQTTClient
 import config
+from Learn import ssd1306
 
-# Disable the access point wifi on esp32
-ap_if = network.WLAN(network.AP_IF)
-ap_if.active(False)
+#OLED testing
 
+OLED_WIDTH = 128
+OLED_HEIGHT = 64
 
-# Connect to wifi network of own choice. Important to configure config.py with your "credentials".
-wifi = network.WLAN(network.STA_IF)
-wifi.active(True)
-wifi.connect(config.wifi_id, config.wifi_password)
+# Define the I2C pins for the OLED on your ESP32
+# (SCL=Serial Clock Line, SDA=Serial Data Line)
+OLED_SCL_PIN = 22 # Connect display's SCL to ESP32's GPIO 22
+OLED_SDA_PIN = 23 # Connect display's SDA to ESP32's GPIO 21
 
-
-# esp32 connecting to wifi
-print("Connecting to WiFi...", end="")
-while not wifi.isconnected():
-    print(".", end="")
-    time.sleep(1)
-print("\nWiFi connected!" if wifi.isconnected() else "\nFailed to connect!")
+# Define the I2C address of your OLED
+# Common addresses are 0x3c (60 decimal) or 0x3d (61 decimal)
+OLED_I2C_ADDR = 0x3c
 
 
-# LED pin setup
-LED_PIN = 13
-led = Pin(LED_PIN, Pin.OUT)
-led.value(0)
+# --- Function to initialize and display a welcome message on OLED ---
+def init_oled_display():
+    try:
+        # Initialize the I2C bus
+        # I2C(id, scl, sda, freq) - id=1 is a common choice for ESP32
+        i2c = I2C(1, scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=400000)
 
-
-# Other sensor fx temperature pin setup
-Temp_PIN = 27
-
-
-# MQTT and adafruit configuration. Important to configure config.py with your "credentials".
-MQTT_BROKER = "io.adafruit.com"
-MQTT_PORT = 1883
-AIO_USERNAME = config.username
-AIO_KEY = config.key
-CLIENT_ID = "esp32_control_device" 
-
-
-# Different topics to control
-LED_TOPIC = b'/feeds/esp32-led-command' # Used in dashboard to control the LED
-TEMP_TOPIC = b'/feeds/esp32-temperature-command' # Used in dashboard to read the temperature
-
-mqtt_client = None # Nessessary to declare globally so it can be accessed in the callback ..?
-
-
-# Function to handle incoming MQTT messages
-def subscribe_callback(topic, message):
-    global led_state
-
-    if topic == (AIO_USERNAME.encode() + LED_TOPIC):
-        if message == b"on":
-            led.value(1)
-            print("LED set to ON")
-        elif message == b"off":
-            led.value(0)
-            print("LED set to OFF")
+        # Scan for I2C devices to verify the OLED is connected and detected
+        print('Scanning I2C bus for devices...')
+        devices = i2c.scan()
+        if OLED_I2C_ADDR in devices:
+            print(f'OLED (0x{OLED_I2C_ADDR:x}) found on I2C bus!')
         else:
-            print("Unknown command:", message.decode())
+            print(f'OLED (0x{OLED_I2C_ADDR:x}) NOT found. Check wiring/address.')
+            print(f'Detected I2C devices: {[hex(d) for d in devices]}')
+            return None # Return None if OLED not found
 
-    elif topic == (AIO_USERNAME.encode() + TEMP_TOPIC):
-         if message == b"temp":
-            print("working")
-    
-    else:
-        print("Received message on unknown topic:", topic.decode())
+        # Initialize the OLED display object
+        oled = ssd1306.SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, i2c, addr=OLED_I2C_ADDR)
 
+        # Clear the display buffer (fill with black)
+        oled.fill(0)
 
-# Function to connect to the MQTT broker and subscribe to the LED topic
-def connect_and_subscribe():
-    global mqtt_client
-    print("Connecting to MQTT broker...")
-    # Initialize MQTTClient: client_id, server, port, user, password, keepalive=0, ssl=False
-    mqtt_client = MQTTClient(CLIENT_ID, MQTT_BROKER, MQTT_PORT, AIO_USERNAME, AIO_KEY)
-    mqtt_client.set_callback(subscribe_callback) # Set the callback for received messages
-    mqtt_client.connect()
+        # Write text to the display buffer
+        # oled.text(string, x_pixel, y_pixel, color=1 (white))
+        oled.text("Hello,", 0, 0)       # First line (y=0)
+        oled.text("DB4 Project", 0, 16) # Second line (y=16, 8 pixels per line)
+        oled.text("Starting...", 0, 32) # Third line (y=32)
 
-    # Subscribe to the different topics
-    LED = AIO_USERNAME.encode() + LED_TOPIC
-    TEMP = AIO_USERNAME.encode() + TEMP_TOPIC
-    mqtt_client.subscribe(LED)
-    mqtt_client.subscribe(TEMP)
-    print(f"Connected to MQTT broker: {MQTT_BROKER}")
-    print(f"Subscribed to topics: {LED.decode()}, {TEMP.decode()}")
+        # Update the physical display to show the buffer content
+        oled.show() 
 
+        print("OLED display initialized and showing welcome message.")
+        return oled # Return the oled object for later use
+        
+    except Exception as e:
+        print(f"Error initializing OLED display: {e}")
+        return None # Return None on error
 
-# Ping setup
-last_ping_time = time.time()
-PING_INTERVAL = 60
+# --- How to use this in your main code ---
 
+# Call the function at the beginning of your script, after imports
+# You can store the returned oled object if you want to use it later
+# e.g., in your MQTT callback or main loop to display status.
+my_oled = init_oled_display()
 
-# Main loop
-try:
-    connect_and_subscribe()
-    while True:
-        try:
-            mqtt_client.check_msg()
-            # Need to ping the broker every 60 seconds to keep the connection alive
-            if (time.time() - last_ping_time) >= PING_INTERVAL:
-                mqtt_client.ping()
-                last_ping_time = time.time()
+# You can then use my_oled if it's not None
+if my_oled:
+    # Example: Clear and show time after 3 seconds
+    time.sleep(3)
+    my_oled.fill(0)
+    my_oled.text("Time: " + str(time.time()), 0, 0)
+    my_oled.show()
+    time.sleep(3)
+    my_oled.fill(0)
+    my_oled.text("Time: " + str(time.time()), 0, 0)
+    my_oled.show()
 
-            time.sleep(0.1)
-
-        except OSError as e:
-            print(f"MQTT OSError: {e}. Reconnecting...")
-            time.sleep(2)
-            try:
-                mqtt_client.disconnect()
-            except Exception as e:
-                print(f"Error during disconnect: {e}")
-            connect_and_subscribe() # Reconnect
-
-except Exception as e:
-    print(f"Fatal error: {e}")
-
-finally: # Important to ensure cleanup on exit, fx for the device to not appear online even though it is turned off
-    if mqtt_client:
-        mqtt_client.disconnect()
-        print("MQTT client disconnected.")
-    if wifi.isconnected():
-        wifi.disconnect()
-        print("Wi-Fi disconnected.")
+# The rest of your main.py code would follow here (WiFi, MQTT, etc.)
+# If you pass the `my_oled` object around, you can update the display
+# in your `sub_cb` or `publish_sensor_data` functions as well.
