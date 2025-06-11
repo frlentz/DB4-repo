@@ -6,14 +6,14 @@ from machine import Pin
 from time import sleep
 
 # Relay control pin
-relay_pin = Pin(26, Pin.OUT)
+relay_pin = Pin(33, Pin.OUT)
 
 def start_pump():
-    relay_pin.off()  # Use .off() if your relay is active LOW
+    relay_pin.on()   # Use .off() if your relay is active LOW
     print("Pump started")
 
 def stop_pump():
-    relay_pin.on()   # Use .on() to turn OFF if relay is active LOW
+    relay_pin.off()   # Use .on() to turn OFF if relay is active LOW
     print("Pump stopped")
 
 def main():
