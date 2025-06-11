@@ -19,6 +19,29 @@ def stop_pump():
     print("Pump stopped")
     update_display("OFF")
 
+
+# === Command Interface ===
+# This code is designed to run on a microcontroller with a relay connected to GPIO 26.
+# It starts and stops a pump by controlling the relay.
+# Adjust the GPIO pin if necessary.
+
+from machine import Pin, I2C
+from time import sleep
+import ssd1306
+
+# === Relay setup ===
+relay_pin = Pin(26, Pin.OUT)
+
+def start_pump():
+    relay_pin.off()  # switch from .on() to .off()
+    print("Pump started")
+    update_display("ON")
+
+def stop_pump():
+    relay_pin.on()  # switch from .off() to .on()
+    print("Pump stopped")
+    update_display("OFF")
+
 # === OLED setup ===
 # I2C: SDA = 21, SCL = 22 (change if needed)
 i2c = I2C(scl=Pin(22), sda=Pin(21))
