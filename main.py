@@ -70,14 +70,13 @@ my_oled = init_oled_display()
 # You can then use my_oled if it's not None
 if my_oled:
     # Example: Clear and show time after 3 seconds
-    time.sleep(3)
-    my_oled.fill(0)
-    my_oled.text("Time: " + str(time.time()), 0, 0)
-    my_oled.show()
-    time.sleep(3)
-    my_oled.fill(0)
-    my_oled.text("Time: " + str(time.time()), 0, 0)
-    my_oled.show()
+    time.sleep(5)
+    for i in range(100):
+        time.sleep(0.2)
+        my_oled.fill(0)
+        my_oled.text("Time: " + str(time.time()), 0, 0)
+        my_oled.show()
+    
 
 # The rest of your main.py code would follow here (WiFi, MQTT, etc.)
 # If you pass the `my_oled` object around, you can update the display
