@@ -10,12 +10,12 @@ import ssd1306
 relay_pin = Pin(26, Pin.OUT)
 
 def start_pump():
-    relay_pin.on()  # If your relay is active LOW, switch to .off()
+    relay_pin.off()  # switch from .on() to .off()
     print("Pump started")
     update_display("ON")
 
 def stop_pump():
-    relay_pin.off()
+    relay_pin.on()  # switch from .off() to .on()
     print("Pump stopped")
     update_display("OFF")
 
