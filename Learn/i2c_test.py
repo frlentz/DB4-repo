@@ -1,4 +1,4 @@
-import ssd1306
+import Learn.ssd1306 as ssd1306
 import tcs34725
 import time
 from machine import I2C, Pin
