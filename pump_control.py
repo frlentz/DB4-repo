@@ -53,6 +53,7 @@ def update_display(status):
     oled.text("[ {} ]".format(status), 0, 30)
     oled.show()
 
+
 # === Command Interface ===
 def main():
     update_display("OFF")  # Default display
