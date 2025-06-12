@@ -18,18 +18,20 @@ print("Connecting to WiFi...", end="")
 while not wifi.isconnected():
     print(".", end="")
     time.sleep(1)
-print("\nWiFi connected!" if wifi.isconnected() else "\nFailed to connect!")
+print("\nWiFi connected" if wifi.isconnected() else "\nFailed to connect")
+
 
 # --- Constants ---
-OLED_WIDTH, OLED_HEIGHT = 128, 64
-SCL_PIN, SDA_PIN = 22, 23
-OLED_ADDR, RGB_ADDR = 0x3c, 0x29
+OLED_WIDTH, OLED_HEIGHT = 128, 64 # OLED dimensions (probably)
+SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
+OLED_ADDR, RGB_ADDR = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
 CLIENT_ID = "esp32_rgb_project"
-AIO_USER = config.username
-AIO_KEY = config.key
+AIO_USER = config.username # Needs to be configured in config.py
+AIO_KEY = config.key # Needs to be configured in config.py
 MQTT_BROKER = "io.adafruit.com"
 MQTT_PORT = 1883
+
 
 # --- MQTT Topics ---
 TOPIC_LED = f"{AIO_USER}/feeds/esp32-led-command"
@@ -40,12 +42,11 @@ TOPIC_COLOR = f"{AIO_USER}/feeds/esp32-color"
 TOPIC_PUMP = f"{AIO_USER}/feeds/esp32-pump-command"
 
 
-# --- Pin Setup ---
+# --- Pin setup ---
 led = Pin(LED_PIN, Pin.OUT)
 led.value(0)
-
 relay_pin = Pin(33, Pin.OUT)
-relay_pin.off()  # Start OFF (change to on() if your relay is active LOW)
+relay_pin.off()
 
 
 # --- Pump definitions ---
@@ -58,28 +59,31 @@ def stop_pump():
     print("Pump stopped")
 
 
-# --- I2C + OLED + RGB Sensor Init ---
+# --- Initializing I2C devices ---
 def init_i2c_devices():
-    i2c = I2C(1, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=400000)
+    i2c = I2C(1, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=400000) # Initializing the I2C bus once for all devices
     oled = None
     rgb = None
 
+    # Scanning for I2C devices
+    print('Scanning I2C bus for devices...')
     devices = i2c.scan()
+    print(f'Detected I2C devices: {[hex(d) for d in devices]}')
 
-    if OLED_ADDR in devices:
+    if OLED_ADDR in devices: # Initial display on OLED
         oled = ssd1306.SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, i2c, addr=OLED_ADDR)
         oled.fill(0)
-        oled.text("Hello,", 0, 0)
+        oled.text("Hello,", 0, 0) # The second parameter is the x position, third is y
         oled.text("DB4 Project", 0, 16)
         oled.text("Starting...", 0, 32)
         oled.show()
 
     if RGB_ADDR in devices:
-        rgb = tcs34725.TCS34725(i2c)
-        rgb.integration_time(154)
-        rgb.gain(4)
-
+        rgb = tcs34725.TCS34725(i2c) # Initializing RGB sensor
+        rgb.integration_time(154)  # This tells the sensor how long to collect light before converting it into a digital reading. In this case 154 milliseconds. Must be one of the allowed gain values: 1, 4, 16, or 60. Higher gain amplifies the signal more. Useful in dim light to get stronger readings
+        rgb.gain(4)                # Higher gain amplifies the signal more.
     return oled, rgb
+
 
 # --- MQTT Callback ---
 def mqtt_callback(topic, message):
@@ -105,6 +109,7 @@ def connect_mqtt():
     client.subscribe(TOPIC_PUMP.encode())
     return client
 
+
 # --- Main ---
 try:
     oled, rgb = init_i2c_devices()
@@ -113,7 +118,7 @@ try:
     ping_interval = 60
 
     if oled:
-        time.sleep(3)
+        time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
 
     while True:
         mqtt_client.check_msg()
@@ -123,15 +128,16 @@ try:
             last_ping = time.time()
 
         if oled:
-            oled.fill(0)
+            oled.fill(0) # Clears display (black background)
             oled.text("Time: " + str(int(time.time())), 0, 0)
 
-        if rgb:
+        if rgb: 
             try:
-                r, g, b, c = rgb.read(raw=True)
+                r, g, b, c = rgb.read(raw=True) # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
+                                                # they range from 0 (no light detected) up to 65535 (maximum light detected).
 
                 if oled:
-                    oled.text(f"R:{r} G:{g}", 0, 16)
+                    oled.text(f"R:{r} G:{g}", 0, 16) # Read raw Red, Green, Blue, and Clear values
                     oled.text(f"B:{b} C:{c}", 0, 32)
                     oled.show()
 
@@ -160,7 +166,6 @@ except Exception as e:
     if oled:
         oled.fill(0)
         oled.text("FATAL ERROR", 0, 0)
-        oled.text(str(e)[:16], 0, 16)
         oled.show()
         time.sleep(5)
 
