@@ -48,9 +48,7 @@ def init_i2c_devices():
     oled = None
     rgb = None
 
-    print("Scanning I2C...")
     devices = i2c.scan()
-    print(f"Found: {[hex(d) for d in devices]}")
 
     if OLED_ADDR in devices:
         oled = ssd1306.SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, i2c, addr=OLED_ADDR)
@@ -59,16 +57,11 @@ def init_i2c_devices():
         oled.text("DB4 Project", 0, 16)
         oled.text("Starting...", 0, 32)
         oled.show()
-    else:
-        print("OLED not found.")
 
     if RGB_ADDR in devices:
         rgb = tcs34725.TCS34725(i2c)
         rgb.integration_time(154)
         rgb.gain(4)
-        print("RGB sensor ready.")
-    else:
-        print("RGB not found.")
 
     return oled, rgb
 
@@ -77,12 +70,8 @@ def mqtt_callback(topic, message):
     if topic.decode() == TOPIC_LED:
         if message == b"on":
             led.value(1)
-            print("LED ON")
         elif message == b"off":
             led.value(0)
-            print("LED OFF")
-        else:
-            print("Unknown LED cmd:", message.decode())
 
 # --- MQTT Connect ---
 def connect_mqtt():
@@ -90,7 +79,6 @@ def connect_mqtt():
     client.set_callback(mqtt_callback)
     client.connect()
     client.subscribe(TOPIC_LED.encode())
-    print("Connected to MQTT")
     return client
 
 # --- Main ---
@@ -103,7 +91,7 @@ try:
     if oled:
         time.sleep(3)
 
-    for i in range(100):
+    while True:
         mqtt_client.check_msg()
 
         if (time.time() - last_ping) > ping_interval:
@@ -112,37 +100,30 @@ try:
 
         if oled:
             oled.fill(0)
-            oled.text("Time: " + str(time.time()), 0, 0)
+            oled.text("Time: " + str(int(time.time())), 0, 0)
 
         if rgb:
             try:
                 r, g, b, c = rgb.read(raw=True)
-                print(f"R={r} G={g} B={b} C={c}")
 
                 if oled:
                     oled.text(f"R:{r} G:{g}", 0, 16)
                     oled.text(f"B:{b} C:{c}", 0, 32)
                     oled.show()
 
-                # Send values to Adafruit IO
+                # Publish RGB values at a safe rate
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
                 mqtt_client.publish(TOPIC_G.encode(), str(g))
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
                 hex_color = "#{:02X}{:02X}{:02X}".format(r >> 8, g >> 8, b >> 8)
                 mqtt_client.publish(TOPIC_COLOR.encode(), hex_color)
 
-            except Exception as e:
-                print("Sensor error:", e)
+            except Exception:
                 if oled:
                     oled.text("Sensor Error", 0, 16)
                     oled.show()
 
-        time.sleep(0.5)
-
-    if oled:
-        oled.fill(0)
-        oled.text("Loop done", 0, 0)
-        oled.show()
+        time.sleep(15)  # Sleep longer to avoid rate-limiting
 
 except Exception as e:
     print("Fatal Error:", e)
