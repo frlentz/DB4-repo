@@ -93,9 +93,9 @@ def mqtt_callback(topic, message):
             led.value(0)
 
     elif topic.decode() == MQTT_pump:
-        if message == b"start":
+        if message == b"on":
             start_pump()
-        elif message == b"stop":
+        elif message == b"off":
             stop_pump()
 
 
