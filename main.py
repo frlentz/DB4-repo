@@ -1,126 +1,164 @@
 import network
 import time
 from machine import Pin, I2C
-import config 
+from umqttsimple import MQTTClient
+import config
 from Learn import ssd1306
 from Learn import tcs34725
 
-# OLED dimensions (probably)
-OLED_width = 128
-OLED_height = 64
+# --- Wi-Fi Setup ---
+ap_if = network.WLAN(network.AP_IF)
+ap_if.active(False)
 
+wifi = network.WLAN(network.STA_IF)
+wifi.active(True)
+wifi.connect(config.wifi_id, config.wifi_password)
 
-# I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
-SCL_pin = 22
-SDA_pin = 23
+print("Connecting to WiFi...", end="")
+while not wifi.isconnected():
+    print(".", end="")
+    time.sleep(1)
+print("\nWiFi connected!" if wifi.isconnected() else "\nFailed to connect!")
 
+# --- Constants ---
+OLED_WIDTH, OLED_HEIGHT = 128, 64
+SCL_PIN, SDA_PIN = 22, 23
+OLED_ADDR, RGB_ADDR = 0x3c, 0x29
+LED_PIN = 13
+CLIENT_ID = "esp32_rgb_project"
+AIO_USER = config.username
+AIO_KEY = config.key
+MQTT_BROKER = "io.adafruit.com"
+MQTT_PORT = 1883
 
-# hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
-OLED_I2C_addr = 0x3c
-RGB_I2C_addr = 0x29
+# --- MQTT Topics ---
+TOPIC_LED = f"{AIO_USER}/feeds/esp32-led-command"
+TOPIC_R = f"{AIO_USER}/feeds/esp32-r"
+TOPIC_G = f"{AIO_USER}/feeds/esp32-g"
+TOPIC_B = f"{AIO_USER}/feeds/esp32-b"
+TOPIC_COLOR = f"{AIO_USER}/feeds/esp32-color"
 
+# --- Pin Setup ---
+led = Pin(LED_PIN, Pin.OUT)
+led.value(0)
 
-# Initializing I2C devices
+# --- I2C + OLED + RGB Sensor Init ---
 def init_i2c_devices():
-    i2c = None
+    i2c = I2C(1, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=400000)
     oled = None
     rgb = None
 
-    try:
-        # Initializing the I2C bus once for all devices
-        i2c = I2C(1, scl=Pin(SCL_pin), sda=Pin(SDA_pin), freq=400000)
+    print("Scanning I2C...")
+    devices = i2c.scan()
+    print(f"Found: {[hex(d) for d in devices]}")
 
-        # Scanning for I2C devices
-        print('Scanning I2C bus for devices...')
-        devices = i2c.scan()
-        print(f'Detected I2C devices: {[hex(d) for d in devices]}')
-
-
-        # initializing OLED
-        if OLED_I2C_addr in devices:
-            print(f'OLED ({OLED_I2C_addr:x}) found.')
-            oled = ssd1306.SSD1306_I2C(OLED_width, OLED_height, i2c, addr=OLED_I2C_addr)
-            
-            # Initial display on OLED
-            oled.fill(0) # Clears display (black background)
-            oled.text("Hello,", 0, 0) # The second parameter is the x position, third is y
-            oled.text("DB4 Project", 0, 16)
-            oled.text("Starting...", 0, 32)
-            oled.show()
-        else:
-            print(f'OLED ({OLED_I2C_addr:x}) not found.')
-
-
-        # Initializing RGB Sensor
-        if RGB_I2C_addr in devices:
-            print(f'RGB (0x{RGB_I2C_addr:x}) found.')
-            rgb = tcs34725.TCS34725(i2c) # Initializing RGB sensor
-            
-            # Pass the time in milliseconds and the gain multiplier directly
-            rgb.integration_time(154) # This tells the sensor how long to collect light before converting it into a digital reading. In this case 154 milliseconds.
-            rgb.gain(4)  # Must be one of the allowed gain values: 1, 4, 16, or 60. Higher gain amplifies the signal more. Useful in dim light to get stronger readings
-            print("RGB sensor initialized.")
-        else:
-            print(f'RGB (0x{RGB_I2C_addr:x}) not found.')
-
-        # Return initialized objects. One or both could be None if not found.
-        return oled, rgb
-        
-    except Exception as e:
-        print(f"Error during I2C device initialization: {e}") # If any error occurs during I2C setup, return None for both
-        return None, None
-
-
-# Main execution
-try:
-    oled_instance, rgb_instance = init_i2c_devices() # Call the initialization function and capture both returned objects
-    
-    if oled_instance: # Checks if they are not None before using.
-        time.sleep(5) # Lets the OLED "Starting..." message show for 5 seconds
-        
-        for i in range(100): # Loop 100 times
-            time.sleep(0.2) # Wait 0.2 seconds between updates
-
-            oled_instance.fill(0) # Clear the entire display for fresh content
-            oled_instance.text("Time: " + str(time.time()), 0, 0)  # Always display time on the OLED
-
-            if rgb_instance: # Checks if the RGB sensor was successfully initialized
-                try:
-                    r, g, b, c = rgb_instance.read(raw=True) # Read raw Red, Green, Blue, and Clear values
-                    
-                    print(f"Loop {i+1}: R={r}, G={g}, B={b}, C={c}") # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
-                                                                     # they range from 0 (no light detected) up to 65535 (maximum light detected).
-                    oled_instance.text(f"R:{r} G:{g}", 0, 16)
-                    oled_instance.text(f"B:{b} C:{c}", 0, 32)
-
-                except Exception as e:
-                    print(f"Error reading RGB sensor: {e}")
-                    oled_instance.text("RGB Error", 0, 16)
-            else:
-                print("RGB sensor not initialized.") # If RGB sensor was not initialized
-                oled_instance.text("No RGB Sensor", 0, 16)
-
-            oled_instance.show() # Update the physical display with all new content
-
-
-        oled_instance.fill(0) # After loop finishes, it displays "Loop Finished"
-        oled_instance.text("Loop Finished", 0, 0)
-        oled_instance.show()
+    if OLED_ADDR in devices:
+        oled = ssd1306.SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, i2c, addr=OLED_ADDR)
+        oled.fill(0)
+        oled.text("Hello,", 0, 0)
+        oled.text("DB4 Project", 0, 16)
+        oled.text("Starting...", 0, 32)
+        oled.show()
     else:
-        print("OLED display not initialized.")
+        print("OLED not found.")
+
+    if RGB_ADDR in devices:
+        rgb = tcs34725.TCS34725(i2c)
+        rgb.integration_time(154)
+        rgb.gain(4)
+        print("RGB sensor ready.")
+    else:
+        print("RGB not found.")
+
+    return oled, rgb
+
+# --- MQTT Callback ---
+def mqtt_callback(topic, message):
+    if topic.decode() == TOPIC_LED:
+        if message == b"on":
+            led.value(1)
+            print("LED ON")
+        elif message == b"off":
+            led.value(0)
+            print("LED OFF")
+        else:
+            print("Unknown LED cmd:", message.decode())
+
+# --- MQTT Connect ---
+def connect_mqtt():
+    client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, user=AIO_USER, password=AIO_KEY)
+    client.set_callback(mqtt_callback)
+    client.connect()
+    client.subscribe(TOPIC_LED.encode())
+    print("Connected to MQTT")
+    return client
+
+# --- Main ---
+try:
+    oled, rgb = init_i2c_devices()
+    mqtt_client = connect_mqtt()
+    last_ping = time.time()
+    ping_interval = 60
+
+    if oled:
+        time.sleep(3)
+
+    for i in range(100):
+        mqtt_client.check_msg()
+
+        if (time.time() - last_ping) > ping_interval:
+            mqtt_client.ping()
+            last_ping = time.time()
+
+        if oled:
+            oled.fill(0)
+            oled.text("Time: " + str(time.time()), 0, 0)
+
+        if rgb:
+            try:
+                r, g, b, c = rgb.read(raw=True)
+                print(f"R={r} G={g} B={b} C={c}")
+
+                if oled:
+                    oled.text(f"R:{r} G:{g}", 0, 16)
+                    oled.text(f"B:{b} C:{c}", 0, 32)
+                    oled.show()
+
+                # Send values to Adafruit IO
+                mqtt_client.publish(TOPIC_R.encode(), str(r))
+                mqtt_client.publish(TOPIC_G.encode(), str(g))
+                mqtt_client.publish(TOPIC_B.encode(), str(b))
+                hex_color = "#{:02X}{:02X}{:02X}".format(r >> 8, g >> 8, b >> 8)
+                mqtt_client.publish(TOPIC_COLOR.encode(), hex_color)
+
+            except Exception as e:
+                print("Sensor error:", e)
+                if oled:
+                    oled.text("Sensor Error", 0, 16)
+                    oled.show()
+
+        time.sleep(0.5)
+
+    if oled:
+        oled.fill(0)
+        oled.text("Loop done", 0, 0)
+        oled.show()
 
 except Exception as e:
-    print(f"An error occurred: {e}")
-    if oled_instance:
-        oled_instance.fill(0)
-        oled_instance.text("ERROR", 0, 0)
-        oled_instance.show()
-    time.sleep(5)
+    print("Fatal Error:", e)
+    if oled:
+        oled.fill(0)
+        oled.text("FATAL ERROR", 0, 0)
+        oled.text(str(e)[:16], 0, 16)
+        oled.show()
+        time.sleep(5)
 
 finally:
-    print("Ffinished.")
-    if oled_instance:
-        oled_instance.fill(0)
-        oled_instance.text("Goodbye", 0, 0)
-        oled_instance.show()
-        time.sleep(1)
+    if mqtt_client:
+        mqtt_client.disconnect()
+    if wifi.isconnected():
+        wifi.disconnect()
+    if oled:
+        oled.fill(0)
+        oled.text("Goodbye", 0, 0)
+        oled.show()
