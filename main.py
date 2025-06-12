@@ -22,24 +22,23 @@ print("\nWiFi connected" if wifi.isconnected() else "\nFailed to connect")
 
 
 # --- Constants ---
-OLED_WIDTH, OLED_HEIGHT = 128, 64 # OLED dimensions (probably)
+OLED_width, OLED_height = 128, 64 # OLED dimensions (probably)
 SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
-OLED_ADDR, RGB_ADDR = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
+OLED_addr, RGB_addr = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
 CLIENT_ID = "esp32_rgb_project"
-AIO_USER = config.username # Needs to be configured in config.py
-AIO_KEY = config.key # Needs to be configured in config.py
-MQTT_BROKER = "io.adafruit.com"
-MQTT_PORT = 1883
+AIO_user = config.username # Needs to be configured in config.py
+AIO_key = config.key # Needs to be configured in config.py
+MQTT_broker = "io.adafruit.com"
+MQTT_port = 1883
 
 
 # --- MQTT Topics ---
-TOPIC_LED = f"{AIO_USER}/feeds/esp32-led-command"
-TOPIC_R = f"{AIO_USER}/feeds/esp32-r"
-TOPIC_G = f"{AIO_USER}/feeds/esp32-g"
-TOPIC_B = f"{AIO_USER}/feeds/esp32-b"
-TOPIC_COLOR = f"{AIO_USER}/feeds/esp32-color"
-TOPIC_PUMP = f"{AIO_USER}/feeds/esp32-pump-command"
+TOPIC_LED = f"{AIO_user}/feeds/esp32-led-command"
+TOPIC_R = f"{AIO_user}/feeds/esp32-r"
+TOPIC_G = f"{AIO_user}/feeds/esp32-g"
+TOPIC_B = f"{AIO_user}/feeds/esp32-b"
+MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
 
 
 # --- Pin setup ---
@@ -70,15 +69,15 @@ def init_i2c_devices():
     devices = i2c.scan()
     print(f'Detected I2C devices: {[hex(d) for d in devices]}')
 
-    if OLED_ADDR in devices: # Initial display on OLED
-        oled = ssd1306.SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, i2c, addr=OLED_ADDR)
+    if OLED_addr in devices: # Initial display on OLED
+        oled = ssd1306.SSD1306_I2C(OLED_width, OLED_height, i2c, addr=OLED_addr)
         oled.fill(0)
         oled.text("Hello,", 0, 0) # The second parameter is the x position, third is y
         oled.text("DB4 Project", 0, 16)
         oled.text("Starting...", 0, 32)
         oled.show()
 
-    if RGB_ADDR in devices:
+    if RGB_addr in devices:
         rgb = tcs34725.TCS34725(i2c) # Initializing RGB sensor
         rgb.integration_time(154)  # This tells the sensor how long to collect light before converting it into a digital reading. In this case 154 milliseconds. Must be one of the allowed gain values: 1, 4, 16, or 60. Higher gain amplifies the signal more. Useful in dim light to get stronger readings
         rgb.gain(4)                # Higher gain amplifies the signal more.
@@ -93,7 +92,7 @@ def mqtt_callback(topic, message):
         elif message == b"off":
             led.value(0)
 
-    elif topic.decode() == TOPIC_PUMP:
+    elif topic.decode() == MQTT_pump:
         if message == b"start":
             start_pump()
         elif message == b"stop":
@@ -102,11 +101,11 @@ def mqtt_callback(topic, message):
 
 # --- MQTT Connect ---
 def connect_mqtt():
-    client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, user=AIO_USER, password=AIO_KEY)
+    client = MQTTClient(CLIENT_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
     client.set_callback(mqtt_callback)
     client.connect()
     client.subscribe(TOPIC_LED.encode())
-    client.subscribe(TOPIC_PUMP.encode())
+    client.subscribe(MQTT_pump.encode())
     return client
 
 
@@ -136,16 +135,14 @@ try:
                 r, g, b, c = rgb.read(raw=True) # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
                                                 # they range from 0 (no light detected) up to 65535 (maximum light detected).
                 if oled:
-                    oled.text(f"R:{r} G:{g}", 0, 16) # Read raw Red, Green, Blue, and Clear values
+                    oled.text(f"R:{r} G:{g}", 0, 16) # Red, Green, Blue, and Clear values
                     oled.text(f"B:{b} C:{c}", 0, 32)
                     oled.show()
 
-                # Publish RGB values at a safe rate
+                # Publish the RGB values at a safe rate
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
-                mqtt_client.publish(TOPIC_G.encode(), str(g))
+                mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
-                hex_color = "#{:02X}{:02X}{:02X}".format(r >> 8, g >> 8, b >> 8)
-                mqtt_client.publish(TOPIC_COLOR.encode(), hex_color)
 
             except Exception:
                 if oled:
