@@ -53,11 +53,16 @@ pump_pwm.duty(0)  # Start with pump off
 
 # --- Pump definitions ---
 def set_pump_speed(percent):
-    # Clamp to 0–100
     percent = max(0, min(percent, 100))
-    pwm_value = int(percent * 1023 / 100)
+    # Remap to usable PWM range: 0–100% → 0.7–1.0
+    if percent == 0:
+        pwm_value = 0
+    else:
+        scaled = 0.7 + (percent / 100) * 0.3
+        pwm_value = int(scaled * 1023)
     pump_pwm.duty(pwm_value)
-    print(f"Pump speed set to {percent}% ({pwm_value}/1023)")
+    print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
+
 
 
 
