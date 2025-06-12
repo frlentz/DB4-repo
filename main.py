@@ -38,7 +38,6 @@ TOPIC_LED = f"{AIO_user}/feeds/esp32-led-command"
 TOPIC_R = f"{AIO_user}/feeds/esp32-r"
 TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
-MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
 TOPIC_PUMP_SPEED = f"{AIO_user}/feeds/esp32-pump-speed"
 
 
@@ -100,12 +99,6 @@ def mqtt_callback(topic, message):
     if topic_str == TOPIC_LED:
         led.value(1 if msg_str == "on" else 0)
 
-    elif topic_str == MQTT_pump:
-        if msg_str == "on":
-            set_pump_speed(100)  # Full speed
-        elif msg_str == "off":
-            set_pump_speed(0)    # Stop
-
     elif topic_str == TOPIC_PUMP_SPEED:
         try:
             percent = int(msg_str)
@@ -114,13 +107,13 @@ def mqtt_callback(topic, message):
             print("Invalid speed value")
 
 
+
 # --- MQTT Connect ---
 def connect_mqtt():
     client = MQTTClient(CLIENT_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
     client.set_callback(mqtt_callback)
     client.connect()
     client.subscribe(TOPIC_LED.encode())
-    client.subscribe(MQTT_pump.encode())
     client.subscribe(TOPIC_PUMP_SPEED.encode())
     return client
 
