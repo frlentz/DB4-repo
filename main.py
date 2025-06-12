@@ -135,7 +135,6 @@ try:
             try:
                 r, g, b, c = rgb.read(raw=True) # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
                                                 # they range from 0 (no light detected) up to 65535 (maximum light detected).
-
                 if oled:
                     oled.text(f"R:{r} G:{g}", 0, 16) # Read raw Red, Green, Blue, and Clear values
                     oled.text(f"B:{b} C:{c}", 0, 32)
@@ -153,9 +152,9 @@ try:
                     oled.text("Sensor Error", 0, 16)
                     oled.show()
 
-        sleep_duration = 15
+        # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
+        sleep_duration = 15 
         sleep_start = time.time()
-
         while time.time() - sleep_start < sleep_duration:
             mqtt_client.check_msg()
             time.sleep(0.1)
