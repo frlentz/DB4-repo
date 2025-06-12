@@ -1,6 +1,6 @@
 import network
 import time
-from machine import Pin, I2C
+from machine import Pin, I2C, PWM
 from umqttsimple import MQTTClient
 import config
 from Learn import ssd1306
@@ -39,23 +39,26 @@ TOPIC_R = f"{AIO_user}/feeds/esp32-r"
 TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
 MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
+TOPIC_PUMP_SPEED = f"{AIO_user}/feeds/esp32-pump-speed"
 
 
 # --- Pin setup ---
 led = Pin(LED_PIN, Pin.OUT)
 led.value(0)
-relay_pin = Pin(33, Pin.OUT)
-relay_pin.off()
+
+pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
+pump_pwm.duty(0)  # Start with pump off
+
 
 
 # --- Pump definitions ---
-def start_pump():
-    relay_pin.on()   # Use .off() if active LOW
-    print("Pump started")
+def set_pump_speed(percent):
+    # Clamp to 0–100
+    percent = max(0, min(percent, 100))
+    pwm_value = int(percent * 1023 / 100)
+    pump_pwm.duty(pwm_value)
+    print(f"Pump speed set to {percent}% ({pwm_value}/1023)")
 
-def stop_pump():
-    relay_pin.off()  # Use .on() if active LOW
-    print("Pump stopped")
 
 
 # --- Initializing I2C devices ---
@@ -86,17 +89,24 @@ def init_i2c_devices():
 
 # --- MQTT Callback ---
 def mqtt_callback(topic, message):
-    if topic.decode() == TOPIC_LED:
-        if message == b"on":
-            led.value(1)
-        elif message == b"off":
-            led.value(0)
+    topic_str = topic.decode()
+    msg_str = message.decode().lower()
 
-    elif topic.decode() == MQTT_pump:
-        if message == b"on":
-            start_pump()
-        elif message == b"off":
-            stop_pump()
+    if topic_str == TOPIC_LED:
+        led.value(1 if msg_str == "on" else 0)
+
+    elif topic_str == MQTT_pump:
+        if msg_str == "on":
+            set_pump_speed(100)  # Full speed
+        elif msg_str == "off":
+            set_pump_speed(0)    # Stop
+
+    elif topic_str == TOPIC_PUMP_SPEED:
+        try:
+            percent = int(msg_str)
+            set_pump_speed(percent)
+        except:
+            print("Invalid speed value")
 
 
 # --- MQTT Connect ---
@@ -106,6 +116,7 @@ def connect_mqtt():
     client.connect()
     client.subscribe(TOPIC_LED.encode())
     client.subscribe(MQTT_pump.encode())
+    client.subscribe(TOPIC_PUMP_SPEED.encode())
     return client
 
 
