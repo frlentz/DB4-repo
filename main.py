@@ -37,10 +37,26 @@ TOPIC_R = f"{AIO_USER}/feeds/esp32-r"
 TOPIC_G = f"{AIO_USER}/feeds/esp32-g"
 TOPIC_B = f"{AIO_USER}/feeds/esp32-b"
 TOPIC_COLOR = f"{AIO_USER}/feeds/esp32-color"
+TOPIC_PUMP = f"{AIO_USER}/feeds/esp32-pump-command"
+
 
 # --- Pin Setup ---
 led = Pin(LED_PIN, Pin.OUT)
 led.value(0)
+
+relay_pin = Pin(33, Pin.OUT)
+relay_pin.off()  # Start OFF (change to on() if your relay is active LOW)
+
+
+# --- Pump definitions ---
+def start_pump():
+    relay_pin.on()   # Use .off() if active LOW
+    print("Pump started")
+
+def stop_pump():
+    relay_pin.off()  # Use .on() if active LOW
+    print("Pump stopped")
+
 
 # --- I2C + OLED + RGB Sensor Init ---
 def init_i2c_devices():
@@ -73,12 +89,20 @@ def mqtt_callback(topic, message):
         elif message == b"off":
             led.value(0)
 
+    elif topic.decode() == TOPIC_PUMP:
+        if message == b"start":
+            start_pump()
+        elif message == b"stop":
+            stop_pump()
+
+
 # --- MQTT Connect ---
 def connect_mqtt():
     client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, user=AIO_USER, password=AIO_KEY)
     client.set_callback(mqtt_callback)
     client.connect()
     client.subscribe(TOPIC_LED.encode())
+    client.subscribe(TOPIC_PUMP.encode())
     return client
 
 # --- Main ---
@@ -123,7 +147,13 @@ try:
                     oled.text("Sensor Error", 0, 16)
                     oled.show()
 
-        time.sleep(15)  # Sleep longer to avoid rate-limiting
+        sleep_duration = 15
+        sleep_start = time.time()
+
+        while time.time() - sleep_start < sleep_duration:
+            mqtt_client.check_msg()
+            time.sleep(0.1)
+
 
 except Exception as e:
     print("Fatal Error:", e)
