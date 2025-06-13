@@ -1,10 +1,11 @@
 import network
 import time
-from machine import Pin, I2C, PWM
+from machine import Pin, I2C, PWM, ADC
 from umqttsimple import MQTTClient
 import config
 from Learn import ssd1306
 from Learn import tcs34725
+import os
 
 # --- Wi-Fi Setup ---
 ap_if = network.WLAN(network.AP_IF)
@@ -26,29 +27,44 @@ OLED_width, OLED_height = 128, 64 # OLED dimensions (probably)
 SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
 OLED_addr, RGB_addr = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
-CLIENT_ID = "esp32_rgb_project"
+Client_ID = "esp32_rgb_project"
 AIO_user = config.username # Needs to be configured in config.py
 AIO_key = config.key # Needs to be configured in config.py
 MQTT_broker = "io.adafruit.com"
 MQTT_port = 1883
+Log_file_name = "rgb_sensor_log.csv"
 
 
 # --- MQTT Topics ---
-TOPIC_LED = f"{AIO_user}/feeds/esp32-led-command"
-TOPIC_R = f"{AIO_user}/feeds/esp32-r"
-TOPIC_G = f"{AIO_user}/feeds/esp32-g"
-TOPIC_B = f"{AIO_user}/feeds/esp32-b"
-MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
-TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
+Topic_LED = f"{AIO_user}/feeds/esp32-led-command"
+Topic_R = f"{AIO_user}/feeds/esp32-r"
+Topic_G = f"{AIO_user}/feeds/esp32-g"
+Topic_B = f"{AIO_user}/feeds/esp32-b"
+Topic_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
 
 
 # --- Pin setup ---
 led = Pin(LED_PIN, Pin.OUT)
 led.value(0)
-
 pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
 pump_pwm.duty(0)  # Start with pump off
 
+
+def log_rgb_data(r_val, g_val, b_val, c_val):
+    try:
+        write_header = not Log_file_name in os.listdir() # os.listdir() returns a list of files/directories in the root - it will then check if the file exists to decide if a header is needed
+
+        # Open the file in append mode ('a').
+        with open(Log_file_name, 'a') as f:
+            if write_header:
+                f.write("timestamp,R,G,B,C\n") # Write CSV header
+
+            timestamp = time.time() # Get current timestamp
+            log_line = f"{timestamp},{r_val},{g_val},{b_val},{c_val}\n"
+            f.write(log_line)
+            print(f"Logged to {Log_file_name}: {log_line.strip()}") # Print to console for confirmation
+    except Exception as e:
+        print(f"Error writing to log file: {e}")
 
 
 # --- Pump definitions ---
@@ -62,8 +78,6 @@ def set_pump_speed(percent):
         pwm_value = int(scaled * 1023)
     pump_pwm.duty(pwm_value)
     print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
-
-
 
 
 # --- Initializing I2C devices ---
@@ -97,16 +111,10 @@ def mqtt_callback(topic, message):
     topic_str = topic.decode()
     msg_str = message.decode().lower()
 
-    if topic_str == TOPIC_LED:
+    if topic_str == Topic_LED:
         led.value(1 if msg_str == "on" else 0)
 
-    elif topic_str == MQTT_pump:
-        if msg_str == "on":
-            set_pump_speed(100)  # Full speed
-        elif msg_str == "off":
-            set_pump_speed(0)    # Stop
-
-    elif topic_str == TOPIC_pump_speed:
+    elif topic_str == Topic_pump_speed:
         try:
             percent = int(msg_str)
             set_pump_speed(percent)
@@ -114,15 +122,13 @@ def mqtt_callback(topic, message):
             print("Invalid speed value")
 
 
-
 # --- MQTT Connect ---
 def connect_mqtt():
-    client = MQTTClient(CLIENT_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
+    client = MQTTClient(Client_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
     client.set_callback(mqtt_callback)
     client.connect()
-    client.subscribe(TOPIC_LED.encode())
-    client.subscribe(MQTT_pump.encode())
-    client.subscribe(TOPIC_pump_speed.encode())
+    client.subscribe(Topic_LED.encode())
+    client.subscribe(Topic_pump_speed.encode())
     return client
 
 
@@ -139,6 +145,7 @@ try:
     while True:
         mqtt_client.check_msg()
 
+        # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
         if (time.time() - last_ping) > ping_interval:
             mqtt_client.ping()
             last_ping = time.time()
@@ -157,16 +164,20 @@ try:
                     oled.show()
 
                 # Publish the RGB values at a safe rate
-                mqtt_client.publish(TOPIC_R.encode(), str(r))
-                mqtt_client.publish(TOPIC_G.encode(), str(g)) 
-                mqtt_client.publish(TOPIC_B.encode(), str(b))
+                mqtt_client.publish(Topic_R.encode(), str(r))
+                mqtt_client.publish(Topic_G.encode(), str(g)) 
+                mqtt_client.publish(Topic_B.encode(), str(b))
+
+                log_rgb_data(r, g, b, c) # Log the RGB values to CSV file
+                # To get the file use: ampy -p /dev/ttyUSB0 get rgb_sensor_log.csv
+                # To remove the file use: ampy -p /dev/ttyUSB0 rm rgb_sensor_log.csv
 
             except Exception:
                 if oled:
                     oled.text("Sensor Error", 0, 16)
                     oled.show()
 
-        # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
+   
         sleep_duration = 15 
         sleep_start = time.time()
         while time.time() - sleep_start < sleep_duration:
