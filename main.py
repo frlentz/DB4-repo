@@ -39,7 +39,7 @@ TOPIC_R = f"{AIO_user}/feeds/esp32-r"
 TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
 MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
-TOPIC_PUMP_SPEED = f"{AIO_user}/feeds/esp32-pump-speed"
+TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
 
 
 # --- Pin setup ---
@@ -101,7 +101,7 @@ def mqtt_callback(topic, message):
         elif msg_str == "off":
             set_pump_speed(0)    # Stop
 
-    elif topic_str == TOPIC_PUMP_SPEED:
+    elif topic_str == TOPIC_pump_speed:
         try:
             percent = int(msg_str)
             set_pump_speed(percent)
@@ -116,7 +116,7 @@ def connect_mqtt():
     client.connect()
     client.subscribe(TOPIC_LED.encode())
     client.subscribe(MQTT_pump.encode())
-    client.subscribe(TOPIC_PUMP_SPEED.encode())
+    client.subscribe(TOPIC_pump_speed.encode())
     return client
 
 
