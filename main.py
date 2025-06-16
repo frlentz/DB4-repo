@@ -20,7 +20,6 @@ while not wifi.isconnected():
     time.sleep(1)
 print("\nWiFi connected" if wifi.isconnected() else "\nFailed to connect")
 
-
 # --- Constants ---
 OLED_width, OLED_height = 128, 64 # OLED dimensions (probably)
 SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
@@ -32,15 +31,14 @@ AIO_key = config.key # Needs to be configured in config.py
 MQTT_broker = "io.adafruit.com"
 MQTT_port = 1883
 
-
 # --- MQTT Topics ---
 TOPIC_LED = f"{AIO_user}/feeds/esp32-led-command"
 TOPIC_R = f"{AIO_user}/feeds/esp32-r"
 TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
+TOPIC_ALGAE = f"{AIO_user}/feeds/esp32-algae"
 MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
 TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
-
 
 # --- Pin setup ---
 led = Pin(LED_PIN, Pin.OUT)
@@ -48,8 +46,6 @@ led.value(0)
 
 pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
 pump_pwm.duty(0)  # Start with pump off
-
-
 
 # --- Pump definitions ---
 def set_pump_speed(percent):
@@ -63,8 +59,20 @@ def set_pump_speed(percent):
     pump_pwm.duty(pwm_value)
     print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
+# --- Algae Estimation ---
+def read_algae(rgb_sensor, led_pin):
+    led_pin.value(1)
+    time.sleep(0.1)
+    r, g, b, c = rgb_sensor.read(raw=True)
+    led_pin.value(0)
 
+    if c > 0:
+        g_norm = g / c
+    else:
+        g_norm = 0
 
+    algae_index = 1 - g_norm  # Lower green → more algae
+    return r, g, b, c, algae_index
 
 # --- Initializing I2C devices ---
 def init_i2c_devices():
@@ -91,7 +99,6 @@ def init_i2c_devices():
         rgb.gain(4)                # Higher gain amplifies the signal more.
     return oled, rgb
 
-
 # --- MQTT Callback ---
 def mqtt_callback(topic, message):
     topic_str = topic.decode()
@@ -113,8 +120,6 @@ def mqtt_callback(topic, message):
         except:
             print("Invalid speed value")
 
-
-
 # --- MQTT Connect ---
 def connect_mqtt():
     client = MQTTClient(CLIENT_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
@@ -124,7 +129,6 @@ def connect_mqtt():
     client.subscribe(MQTT_pump.encode())
     client.subscribe(TOPIC_pump_speed.encode())
     return client
-
 
 # --- Main ---
 try:
@@ -149,17 +153,18 @@ try:
 
         if rgb: 
             try:
-                r, g, b, c = rgb.read(raw=True) # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
-                                                # they range from 0 (no light detected) up to 65535 (maximum light detected).
+                r, g, b, c, algae_index = read_algae(rgb, led) # NEW: uses LED for reading and adds algae index
                 if oled:
                     oled.text(f"R:{r} G:{g}", 0, 16) # Red, Green, Blue, and Clear values
                     oled.text(f"B:{b} C:{c}", 0, 32)
+                    oled.text("Algae:{:.2f}".format(algae_index), 0, 48)
                     oled.show()
 
-                # Publish the RGB values at a safe rate
+                # Publish the RGB and Algae values at a safe rate
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
                 mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
+                mqtt_client.publish(TOPIC_ALGAE.encode(), str(algae_index))  # NEW: algae value
 
             except Exception:
                 if oled:
@@ -172,7 +177,6 @@ try:
         while time.time() - sleep_start < sleep_duration:
             mqtt_client.check_msg()
             time.sleep(0.1)
-
 
 except Exception as e:
     print("Fatal Error:", e)
