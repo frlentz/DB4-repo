@@ -39,6 +39,7 @@ TOPIC_B = f"{AIO_user}/feeds/esp32-b"
 TOPIC_ALGAE = f"{AIO_user}/feeds/esp32-algae"
 MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
 TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
+TOPIC_SUB_PUMP_SPEED = f"{AIO_user}/feeds/esp32-sub-pump-speed"  # NEW: submersible pump speed topic
 
 # --- Pin setup ---
 led = Pin(LED_PIN, Pin.OUT)
@@ -46,6 +47,9 @@ led.value(0)
 
 pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
 pump_pwm.duty(0)  # Start with pump off
+
+sub_pump_pwm = PWM(Pin(32), freq=1000)  # NEW: submersible pump on pin 32
+sub_pump_pwm.duty(0)  # Start with pump off
 
 # --- Pump definitions ---
 def set_pump_speed(percent):
@@ -58,6 +62,13 @@ def set_pump_speed(percent):
         pwm_value = int(scaled * 1023)
     pump_pwm.duty(pwm_value)
     print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
+
+# NEW: Control submersible pump speed (0–100%)
+def set_sub_pump_speed(percent):
+    percent = max(0, min(percent, 100))
+    pwm_value = int((percent / 100) * 1023)
+    sub_pump_pwm.duty(pwm_value)
+    print(f"Submersible pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
 # --- Algae Estimation ---
 def read_algae(rgb_sensor, led_pin):
@@ -120,6 +131,13 @@ def mqtt_callback(topic, message):
         except:
             print("Invalid speed value")
 
+    elif topic_str == TOPIC_SUB_PUMP_SPEED:
+        try:
+            percent = int(msg_str)
+            set_sub_pump_speed(percent)
+        except:
+            print("Invalid sub pump speed")
+
 # --- MQTT Connect ---
 def connect_mqtt():
     client = MQTTClient(CLIENT_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
@@ -128,6 +146,7 @@ def connect_mqtt():
     client.subscribe(TOPIC_LED.encode())
     client.subscribe(MQTT_pump.encode())
     client.subscribe(TOPIC_pump_speed.encode())
+    client.subscribe(TOPIC_SUB_PUMP_SPEED.encode())  # NEW: subscribe to submersible pump topic
     return client
 
 # --- Main ---
