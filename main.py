@@ -20,6 +20,7 @@ while not wifi.isconnected():
     time.sleep(1)
 print("\nWiFi connected" if wifi.isconnected() else "\nFailed to connect")
 
+
 # --- Constants ---
 OLED_width, OLED_height = 128, 64 # OLED dimensions (probably)
 SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
@@ -31,15 +32,15 @@ AIO_key = config.key # Needs to be configured in config.py
 MQTT_broker = "io.adafruit.com"
 MQTT_port = 1883
 
+
 # --- MQTT Topics ---
 TOPIC_LED = f"{AIO_user}/feeds/esp32-led-command"
 TOPIC_R = f"{AIO_user}/feeds/esp32-r"
 TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
-TOPIC_ALGAE = f"{AIO_user}/feeds/esp32-algae"
-MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
 TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
-TOPIC_SUB_PUMP_SPEED = f"{AIO_user}/feeds/esp32-sub-pump-speed"  # NEW: submersible pump speed topic
+TOPIC_sub_pump_speed = f"{AIO_user}/feeds/esp32-sub-pump-speed"  
+
 
 # --- Pin setup ---
 led = Pin(LED_PIN, Pin.OUT)
@@ -48,8 +49,9 @@ led.value(0)
 pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
 pump_pwm.duty(0)  # Start with pump off
 
-sub_pump_pwm = PWM(Pin(32), freq=1000)  # NEW: submersible pump on pin 32
+sub_pump_pwm = PWM(Pin(32), freq=1000)  # submersible pump on pin 32
 sub_pump_pwm.duty(0)  # Start with pump off
+
 
 # --- Pump definitions ---
 def set_pump_speed(percent):
@@ -63,27 +65,14 @@ def set_pump_speed(percent):
     pump_pwm.duty(pwm_value)
     print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
-# NEW: Control submersible pump speed (0–100%)
+
+# Control submersible pump speed (0–100%)
 def set_sub_pump_speed(percent):
     percent = max(0, min(percent, 100))
     pwm_value = int((percent / 100) * 1023)
     sub_pump_pwm.duty(pwm_value)
     print(f"Submersible pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
-# --- Algae Estimation ---
-def read_algae(rgb_sensor, led_pin):
-    led_pin.value(1)
-    time.sleep(0.1)
-    r, g, b, c = rgb_sensor.read(raw=True)
-    led_pin.value(0)
-
-    if c > 0:
-        g_norm = g / c
-    else:
-        g_norm = 0
-
-    algae_index = 1 - g_norm  # Lower green → more algae
-    return r, g, b, c, algae_index
 
 # --- Initializing I2C devices ---
 def init_i2c_devices():
@@ -110,6 +99,7 @@ def init_i2c_devices():
         rgb.gain(4)                # Higher gain amplifies the signal more.
     return oled, rgb
 
+
 # --- MQTT Callback ---
 def mqtt_callback(topic, message):
     topic_str = topic.decode()
@@ -131,12 +121,13 @@ def mqtt_callback(topic, message):
         except:
             print("Invalid speed value")
 
-    elif topic_str == TOPIC_SUB_PUMP_SPEED:
+    elif topic_str == TOPIC_sub_pump_speed:
         try:
             percent = int(msg_str)
             set_sub_pump_speed(percent)
         except:
             print("Invalid sub pump speed")
+
 
 # --- MQTT Connect ---
 def connect_mqtt():
@@ -146,7 +137,7 @@ def connect_mqtt():
     client.subscribe(TOPIC_LED.encode())
     client.subscribe(MQTT_pump.encode())
     client.subscribe(TOPIC_pump_speed.encode())
-    client.subscribe(TOPIC_SUB_PUMP_SPEED.encode())  # NEW: subscribe to submersible pump topic
+    client.subscribe(TOPIC_sub_pump_speed.encode())  # NEW: subscribe to submersible pump topic
     return client
 
 # --- Main ---
@@ -183,7 +174,7 @@ try:
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
                 mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
-                mqtt_client.publish(TOPIC_ALGAE.encode(), str(algae_index))  # NEW: algae value
+                mqtt_client.publish(TOPIC_algae.encode(), str(algae_index))  # NEW: algae value
 
             except Exception:
                 if oled:
