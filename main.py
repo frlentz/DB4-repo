@@ -1,10 +1,12 @@
 import network
 import time
-from machine import Pin, I2C, PWM
+from machine import Pin, I2C, PWM, ADC
+import math
 from umqttsimple import MQTTClient
 import config
 from Learn import ssd1306
 from Learn import tcs34725
+from Learn import read_temp
 
 # --- Wi-Fi Setup ---
 ap_if = network.WLAN(network.AP_IF)
@@ -40,6 +42,7 @@ TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
 MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
 TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
+TOPIC_temp = f"{AIO_user}/feeds/esp32-temp"
 
 
 # --- Pin setup ---
@@ -135,6 +138,8 @@ try:
 
     if oled:
         time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
+    
+    oled_line_temp = 48 # Or adjust as needed to fit on your OLED
 
     while True:
         mqtt_client.check_msg()
@@ -146,6 +151,24 @@ try:
         if oled:
             oled.fill(0) # Clears display (black background)
             oled.text("Time: " + str(int(time.time())), 0, 0)
+
+        try:
+            # The read_temp() function from your module should return the temperature value
+            current_temp = read_temp.read_temp()
+            print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
+
+            # Publish temperature to Adafruit IO
+            mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
+
+            if oled:
+                # Clear the previous temp line before writing new data
+                oled.text(f"Temp: {current_temp:.2f} C", 0, oled_line_temp)
+
+
+        except Exception as e:
+            print(f"Temperature Sensor Error: {e}")
+            if oled:
+                oled.text("Temp Error", 0, oled_line_temp)
 
         if rgb: 
             try:
