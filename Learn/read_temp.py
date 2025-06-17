@@ -132,13 +132,13 @@ def read_temp(temp_sens):
 
     # Average of the NUM_SAMPLES and look it up in the table
     raw_average = sum(raw_read)/NUM_SAMPLES
-    print('raw_avg = ' + str(raw_average))
-    print('V_measured = ' + str(adc_V_lookup[round(raw_average)]))
+    #print('raw_avg = ' + str(raw_average))
+    #print('V_measured = ' + str(adc_V_lookup[round(raw_average)]))
 
     # Convert to resistance
     raw_average = ADC_MAX * adc_V_lookup[round(raw_average)]/ADC_Vmax
     resistance = (SER_RES * raw_average) / (ADC_MAX - raw_average)
-    print('Thermistor resistance: {} ohms'.format(resistance))
+    #print('Thermistor resistance: {} ohms'.format(resistance))
 
     # Convert to temperature
     steinhart  = log(resistance / NOM_RES) / THERM_B_COEFF
@@ -146,16 +146,16 @@ def read_temp(temp_sens):
     steinhart  = (1.0 / steinhart) - 273.15
     return steinhart
 
-print("I'm alive!\n")
-utime.sleep_ms(2000)
+#print("I'm alive!\n")
+#utime.sleep_ms(2000)
 
-temp_sens = init_temp_sensor()
+#temp_sens = init_temp_sensor()
 
-sample_last_ms = 0
-SAMPLE_INTERVAL = 1000
+#sample_last_ms = 0
+#SAMPLE_INTERVAL = 1000
 
-while (True):
-    if utime.ticks_diff(utime.ticks_ms(), sample_last_ms) >= SAMPLE_INTERVAL:
-        temp = read_temp(temp_sens)
-        print('Thermistor temperature: ' + str(temp))
-        sample_last_ms = utime.ticks_ms()
+#while (True):
+#    if utime.ticks_diff(utime.ticks_ms(), sample_last_ms) >= SAMPLE_INTERVAL:
+#        temp = read_temp(temp_sens)
+#        print('Thermistor temperature: ' + str(temp))
+#        sample_last_ms = utime.ticks_ms()
