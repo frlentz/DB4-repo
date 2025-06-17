@@ -1,10 +1,13 @@
 import network
+import sys
 import time
-from machine import Pin, I2C, PWM
+from machine import Pin, I2C, PWM, ADC
+import math
 from umqttsimple import MQTTClient
 import config
 from Learn import ssd1306
 from Learn import tcs34725
+from Learn import read_temp
 
 # --- Wi-Fi Setup ---
 ap_if = network.WLAN(network.AP_IF)
@@ -26,6 +29,7 @@ OLED_width, OLED_height = 128, 64 # OLED dimensions (probably)
 SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
 OLED_addr, RGB_addr = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
+Temp_PIN = 36
 CLIENT_ID = "esp32_rgb_project"
 AIO_user = config.username # Needs to be configured in config.py
 AIO_key = config.key # Needs to be configured in config.py
@@ -40,6 +44,7 @@ TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
 TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
 TOPIC_sub_pump_speed = f"{AIO_user}/feeds/esp32-sub-pump-speed"  
+TOPIC_temp = f"{AIO_user}/feeds/esp32-temp"
 
 
 # --- Pin setup ---
@@ -95,7 +100,7 @@ def init_i2c_devices():
 
     if RGB_addr in devices:
         rgb = tcs34725.TCS34725(i2c) # Initializing RGB sensor
-        rgb.integration_time(154)  # This tells the sensor how long to collect light before converting it into a digital reading. In this case 154 milliseconds. Must be one of the allowed gain values: 1, 4, 16, or 60. Higher gain amplifies the signal more. Useful in dim light to get stronger readings
+        rgb.integration_time(400)  # This tells the sensor how long to collect light before converting it into a digital reading. In this case 154 milliseconds. Must be one of the allowed gain values: 1, 4, 16, or 60. Higher gain amplifies the signal more. Useful in dim light to get stronger readings
         rgb.gain(4)                # Higher gain amplifies the signal more.
     return oled, rgb
 
@@ -108,25 +113,21 @@ def mqtt_callback(topic, message):
     if topic_str == TOPIC_LED:
         led.value(1 if msg_str == "on" else 0)
 
-    elif topic_str == MQTT_pump:
-        if msg_str == "on":
-            set_pump_speed(100)  # Full speed
-        elif msg_str == "off":
-            set_pump_speed(0)    # Stop
-
     elif topic_str == TOPIC_pump_speed:
         try:
             percent = int(msg_str)
             set_pump_speed(percent)
-        except:
-            print("Invalid speed value")
+
+        except ValueError as e: 
+            print("Invalid speed value for main pump")
+            sys.print_exception(e) #
 
     elif topic_str == TOPIC_sub_pump_speed:
         try:
             percent = int(msg_str)
             set_sub_pump_speed(percent)
         except:
-            print("Invalid sub pump speed")
+            print("Invalid speed value for submersible pump")
 
 
 # --- MQTT Connect ---
@@ -135,17 +136,25 @@ def connect_mqtt():
     client.set_callback(mqtt_callback)
     client.connect()
     client.subscribe(TOPIC_LED.encode())
-    client.subscribe(MQTT_pump.encode())
     client.subscribe(TOPIC_pump_speed.encode())
-    client.subscribe(TOPIC_sub_pump_speed.encode())  # NEW: subscribe to submersible pump topic
+    client.subscribe(TOPIC_sub_pump_speed.encode())
     return client
 
+
 # --- Main ---
+oled = None
+rgb = None
+mqtt_client = None
+temp_sens = None
+last_temp_publish_time = 0 
+temp_publish_interval = 30 # We only want a temp readiing every 30 seconds
+
 try:
     oled, rgb = init_i2c_devices()
     mqtt_client = connect_mqtt()
     last_ping = time.time()
     ping_interval = 60
+    temp_sens = read_temp.init_temp_sensor(Temp_PIN)
 
     if oled:
         time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
@@ -161,35 +170,50 @@ try:
             oled.fill(0) # Clears display (black background)
             oled.text("Time: " + str(int(time.time())), 0, 0)
 
+        if temp_sens and (time.time() - last_temp_publish_time) > temp_publish_interval:
+            try:
+                current_temp = read_temp.read_temp(temp_sens)
+                print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
+
+                if mqtt_client: # Only publish if MQTT client is connected
+                    mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
+                
+                last_temp_publish_time = time.time() # Update the timer after successful read/publish
+
+            except Exception as e:
+                print(f"Temperature Sensor Error:")
+                sys.print_exception(e) 
+
+
         if rgb: 
             try:
-                r, g, b, c, algae_index = read_algae(rgb, led) # NEW: uses LED for reading and adds algae index
+                r, g, b, c = rgb.read(raw=True)
                 if oled:
                     oled.text(f"R:{r} G:{g}", 0, 16) # Red, Green, Blue, and Clear values
                     oled.text(f"B:{b} C:{c}", 0, 32)
-                    oled.text("Algae:{:.2f}".format(algae_index), 0, 48)
                     oled.show()
 
-                # Publish the RGB and Algae values at a safe rate
+                # Publish the RGB values at a safe rate
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
                 mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
-                mqtt_client.publish(TOPIC_algae.encode(), str(algae_index))  # NEW: algae value
 
-            except Exception:
+            except Exception as e:
+                print(f"RGB Sensor Error:") 
+                sys.print_exception(e) 
                 if oled:
-                    oled.text("Sensor Error", 0, 16)
-                    oled.show()
+                    oled.text("RGB Error", 0, 16)
 
         # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
-        sleep_duration = 15 
+        sleep_duration = 15
         sleep_start = time.time()
         while time.time() - sleep_start < sleep_duration:
             mqtt_client.check_msg()
-            time.sleep(0.1)
+            time.sleep(0.2)
 
 except Exception as e:
-    print("Fatal Error:", e)
+    print("Fatal Error caught in main loop:") 
+    sys.print_exception(e) 
     if oled:
         oled.fill(0)
         oled.text("FATAL ERROR", 0, 0)
