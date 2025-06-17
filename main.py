@@ -42,8 +42,8 @@ TOPIC_LED = f"{AIO_user}/feeds/esp32-led-command"
 TOPIC_R = f"{AIO_user}/feeds/esp32-r"
 TOPIC_G = f"{AIO_user}/feeds/esp32-g"
 TOPIC_B = f"{AIO_user}/feeds/esp32-b"
-MQTT_pump = f"{AIO_user}/feeds/esp32-pump-command"
 TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
+TOPIC_sub_pump_speed = f"{AIO_user}/feeds/esp32-sub-pump-speed"  
 TOPIC_temp = f"{AIO_user}/feeds/esp32-temp"
 
 
@@ -54,6 +54,8 @@ led.value(0)
 pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
 pump_pwm.duty(0)  # Start with pump off
 
+sub_pump_pwm = PWM(Pin(32), freq=1000)  # submersible pump on pin 32
+sub_pump_pwm.duty(0)  # Start with pump off
 
 
 # --- Pump definitions ---
@@ -69,6 +71,12 @@ def set_pump_speed(percent):
     print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
 
+# Control submersible pump speed (0–100%)
+def set_sub_pump_speed(percent):
+    percent = max(0, min(percent, 100))
+    pwm_value = int((percent / 100) * 1023)
+    sub_pump_pwm.duty(pwm_value)
+    print(f"Submersible pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
 
 # --- Initializing I2C devices ---
@@ -122,6 +130,12 @@ def mqtt_callback(topic, message):
 
             
 
+    elif topic_str == TOPIC_sub_pump_speed:
+        try:
+            percent = int(msg_str)
+            set_sub_pump_speed(percent)
+        except:
+            print("Invalid sub pump speed")
 
 
 # --- MQTT Connect ---
@@ -132,8 +146,8 @@ def connect_mqtt():
     client.subscribe(TOPIC_LED.encode())
     client.subscribe(MQTT_pump.encode())
     client.subscribe(TOPIC_pump_speed.encode())
+    client.subscribe(TOPIC_sub_pump_speed.encode())  # NEW: subscribe to submersible pump topic
     return client
-
 
 # --- Main ---
 oled = None
@@ -180,17 +194,18 @@ try:
 
         if rgb: 
             try:
-                r, g, b, c = rgb.read(raw=True) # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
-                                                # they range from 0 (no light detected) up to 65535 (maximum light detected).
+                r, g, b, c, algae_index = read_algae(rgb, led) # NEW: uses LED for reading and adds algae index
                 if oled:
                     oled.text(f"R:{r} G:{g}", 0, 16) # Red, Green, Blue, and Clear values
                     oled.text(f"B:{b} C:{c}", 0, 32)
+                    oled.text("Algae:{:.2f}".format(algae_index), 0, 48)
                     oled.show()
 
-                # Publish the RGB values at a safe rate
+                # Publish the RGB and Algae values at a safe rate
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
                 mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
+                mqtt_client.publish(TOPIC_algae.encode(), str(algae_index))  # NEW: algae value
 
             except Exception as e: # <--- FIXED: Catching exception as 'e'
                 print(f"RGB Sensor Error:") # <--- Changed message
@@ -204,7 +219,6 @@ try:
         while time.time() - sleep_start < sleep_duration:
             mqtt_client.check_msg()
             time.sleep(0.1)
-
 
 except Exception as e:
     print("Fatal Error caught in main loop:") # <--- Changed message
