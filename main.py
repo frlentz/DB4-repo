@@ -1,11 +1,14 @@
 import network
+import sys
 import time
 from machine import Pin, I2C, PWM, ADC
+import math
 from umqttsimple import MQTTClient
 import config
 from Learn import ssd1306
 from Learn import tcs34725
 import os
+from Learn import read_temp
 
 # --- Wi-Fi Setup ---
 ap_if = network.WLAN(network.AP_IF)
@@ -27,7 +30,8 @@ OLED_width, OLED_height = 128, 64 # OLED dimensions (probably)
 SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
 OLED_addr, RGB_addr = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
-Client_ID = "esp32_rgb_project"
+Temp_PIN = 36
+CLIENT_ID = "esp32_rgb_project"
 AIO_user = config.username # Needs to be configured in config.py
 AIO_key = config.key # Needs to be configured in config.py
 MQTT_broker = "io.adafruit.com"
@@ -36,11 +40,13 @@ Log_file_name = "rgb_sensor_log.csv"
 
 
 # --- MQTT Topics ---
-Topic_LED = f"{AIO_user}/feeds/esp32-led-command"
-Topic_R = f"{AIO_user}/feeds/esp32-r"
-Topic_G = f"{AIO_user}/feeds/esp32-g"
-Topic_B = f"{AIO_user}/feeds/esp32-b"
-Topic_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
+TOPIC_LED = f"{AIO_user}/feeds/esp32-led-command"
+TOPIC_R = f"{AIO_user}/feeds/esp32-r"
+TOPIC_G = f"{AIO_user}/feeds/esp32-g"
+TOPIC_B = f"{AIO_user}/feeds/esp32-b"
+TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
+TOPIC_sub_pump_speed = f"{AIO_user}/feeds/esp32-sub-pump-speed"  
+TOPIC_temp = f"{AIO_user}/feeds/esp32-temp"
 
 
 # --- Pin setup ---
@@ -49,6 +55,8 @@ led.value(0)
 pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
 pump_pwm.duty(0)  # Start with pump off
 
+sub_pump_pwm = PWM(Pin(32), freq=1000)  # submersible pump on pin 32
+sub_pump_pwm.duty(0)  # Start with pump off
 
 def log_rgb_data(r_val, g_val, b_val, c_val):
     try:
@@ -80,6 +88,14 @@ def set_pump_speed(percent):
     print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
 
+# Control submersible pump speed (0–100%)
+def set_sub_pump_speed(percent):
+    percent = max(0, min(percent, 100))
+    pwm_value = int((percent / 100) * 1023)
+    sub_pump_pwm.duty(pwm_value)
+    print(f"Submersible pump speed set to {percent}% → PWM: {pwm_value}/1023")
+
+
 # --- Initializing I2C devices ---
 def init_i2c_devices():
     i2c = I2C(1, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=400000) # Initializing the I2C bus once for all devices
@@ -101,7 +117,7 @@ def init_i2c_devices():
 
     if RGB_addr in devices:
         rgb = tcs34725.TCS34725(i2c) # Initializing RGB sensor
-        rgb.integration_time(154)  # This tells the sensor how long to collect light before converting it into a digital reading. In this case 154 milliseconds. Must be one of the allowed gain values: 1, 4, 16, or 60. Higher gain amplifies the signal more. Useful in dim light to get stronger readings
+        rgb.integration_time(400)  # This tells the sensor how long to collect light before converting it into a digital reading. In this case 154 milliseconds. Must be one of the allowed gain values: 1, 4, 16, or 60. Higher gain amplifies the signal more. Useful in dim light to get stronger readings
         rgb.gain(4)                # Higher gain amplifies the signal more.
     return oled, rgb
 
@@ -114,30 +130,47 @@ def mqtt_callback(topic, message):
     if topic_str == Topic_LED:
         led.value(1 if msg_str == "on" else 0)
 
-    elif topic_str == Topic_pump_speed:
+    elif topic_str == TOPIC_pump_speed:
         try:
             percent = int(msg_str)
             set_pump_speed(percent)
-        except:
-            print("Invalid speed value")
 
+        except ValueError as e: 
+            print("Invalid speed value for main pump")
+            sys.print_exception(e) #
+
+    elif topic_str == TOPIC_sub_pump_speed:
+        try:
+            percent = int(msg_str)
+            set_sub_pump_speed(percent)
+        except:
+            print("Invalid speed value for submersible pump")
 
 # --- MQTT Connect ---
 def connect_mqtt():
     client = MQTTClient(Client_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
     client.set_callback(mqtt_callback)
     client.connect()
-    client.subscribe(Topic_LED.encode())
-    client.subscribe(Topic_pump_speed.encode())
+    client.subscribe(TOPIC_LED.encode())
+    client.subscribe(TOPIC_pump_speed.encode())
+    client.subscribe(TOPIC_sub_pump_speed.encode())
     return client
 
 
 # --- Main ---
+oled = None
+rgb = None
+mqtt_client = None
+temp_sens = None
+last_temp_publish_time = 0 
+temp_publish_interval = 30 # We only want a temp readiing every 30 seconds
+
 try:
     oled, rgb = init_i2c_devices()
     mqtt_client = connect_mqtt()
     last_ping = time.time()
     ping_interval = 60
+    temp_sens = read_temp.init_temp_sensor(Temp_PIN)
 
     if oled:
         time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
@@ -153,6 +186,21 @@ try:
         if oled:
             oled.fill(0) # Clears display (black background)
             oled.text("Time: " + str(int(time.time())), 0, 0)
+
+        if temp_sens and (time.time() - last_temp_publish_time) > temp_publish_interval:
+            try:
+                current_temp = read_temp.read_temp(temp_sens)
+                print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
+
+                if mqtt_client: # Only publish if MQTT client is connected
+                    mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
+                
+                last_temp_publish_time = time.time() # Update the timer after successful read/publish
+
+            except Exception as e:
+                print(f"Temperature Sensor Error:")
+                sys.print_exception(e) 
+
 
         if rgb: 
             try:
@@ -172,21 +220,22 @@ try:
                 # To get the file use: ampy -p /dev/ttyUSB0 get rgb_sensor_log.csv
                 # To remove the file use: ampy -p /dev/ttyUSB0 rm rgb_sensor_log.csv
 
-            except Exception:
+            except Exception as e:
+                print(f"RGB Sensor Error:") 
+                sys.print_exception(e) 
                 if oled:
-                    oled.text("Sensor Error", 0, 16)
-                    oled.show()
+                    oled.text("RGB Error", 0, 16)
 
-   
-        sleep_duration = 15 
+        # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
+        sleep_duration = 15
         sleep_start = time.time()
         while time.time() - sleep_start < sleep_duration:
             mqtt_client.check_msg()
-            time.sleep(0.1)
-
+            time.sleep(0.2)
 
 except Exception as e:
-    print("Fatal Error:", e)
+    print("Fatal Error caught in main loop:") 
+    sys.print_exception(e) 
     if oled:
         oled.fill(0)
         oled.text("FATAL ERROR", 0, 0)
