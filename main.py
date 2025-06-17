@@ -1,4 +1,5 @@
 import network
+import sys
 import time
 from machine import Pin, I2C, PWM, ADC
 import math
@@ -28,6 +29,7 @@ OLED_width, OLED_height = 128, 64 # OLED dimensions (probably)
 SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Serial Data Line)
 OLED_addr, RGB_addr = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
+Temp_PIN = 36
 CLIENT_ID = "esp32_rgb_project"
 AIO_user = config.username # Needs to be configured in config.py
 AIO_key = config.key # Needs to be configured in config.py
@@ -113,8 +115,12 @@ def mqtt_callback(topic, message):
         try:
             percent = int(msg_str)
             set_pump_speed(percent)
-        except:
+
+        except ValueError as e: 
             print("Invalid speed value")
+            sys.print_exception(e) #
+
+            
 
 
 
@@ -130,16 +136,20 @@ def connect_mqtt():
 
 
 # --- Main ---
+oled = None
+rgb = None
+mqtt_client = None
+temp_sens = None
+
 try:
     oled, rgb = init_i2c_devices()
     mqtt_client = connect_mqtt()
     last_ping = time.time()
     ping_interval = 60
+    temp_sens = read_temp.init_temp_sensor(Temp_PIN)
 
     if oled:
         time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
-    
-    oled_line_temp = 48 # Or adjust as needed to fit on your OLED
 
     while True:
         mqtt_client.check_msg()
@@ -152,23 +162,21 @@ try:
             oled.fill(0) # Clears display (black background)
             oled.text("Time: " + str(int(time.time())), 0, 0)
 
-        try:
-            # The read_temp() function from your module should return the temperature value
-            current_temp = read_temp.read_temp()
-            print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
+        if temp_sens: # Ensure the ADC object was successfully initialized
+            try:
+                # Pass the initialized ADC object to read_temp
+                current_temp = read_temp.read_temp(temp_sens)
+                print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
 
-            # Publish temperature to Adafruit IO
-            mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
-
-            if oled:
-                # Clear the previous temp line before writing new data
-                oled.text(f"Temp: {current_temp:.2f} C", 0, oled_line_temp)
+                # Publish temperature to Adafruit 
+                if mqtt_client: # Only publish if MQTT client is connected
+                    mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
 
 
-        except Exception as e:
-            print(f"Temperature Sensor Error: {e}")
-            if oled:
-                oled.text("Temp Error", 0, oled_line_temp)
+            except Exception as e:
+                print(f"Temperature Sensor Error:") # <--- Changed message
+                sys.print_exception(e) # <--- FIXED: Print full traceback
+
 
         if rgb: 
             try:
@@ -184,10 +192,11 @@ try:
                 mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
 
-            except Exception:
+            except Exception as e: # <--- FIXED: Catching exception as 'e'
+                print(f"RGB Sensor Error:") # <--- Changed message
+                sys.print_exception(e) # <--- FIXED: Print full traceback
                 if oled:
-                    oled.text("Sensor Error", 0, 16)
-                    oled.show()
+                    oled.text("RGB Error", 0, 16) # More specific error messa
 
         # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
         sleep_duration = 15 
@@ -198,7 +207,8 @@ try:
 
 
 except Exception as e:
-    print("Fatal Error:", e)
+    print("Fatal Error caught in main loop:") # <--- Changed message
+    sys.print_exception(e) # <--- FIXED: Print full traceback
     if oled:
         oled.fill(0)
         oled.text("FATAL ERROR", 0, 0)
