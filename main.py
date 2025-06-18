@@ -183,7 +183,8 @@ try:
                 #Logging the data
                 f = open('data.txt', 'a')
                 f.write(data_for_esp)
-                f.close()
+                f.close() 
+                # To see it: >>> f = open("data.txt")  >>> f.read(
 
 
                 if mqtt_client: # Only publish if MQTT client is connected
@@ -209,7 +210,7 @@ try:
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
                 mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
-                
+
 
             except Exception as e:
                 print(f"RGB Sensor Error:") 
