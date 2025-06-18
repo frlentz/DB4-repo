@@ -140,6 +140,46 @@ def connect_mqtt():
     client.subscribe(TOPIC_sub_pump_speed.encode())
     return client
 
+# --- PID controller ---
+class PID:
+    def __init__(self, Kp, Ki, Kd, setpoint, output_limits=(0, 100)): #controls pump speed as a percentage
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.setpoint = setpoint
+        self.output_limits = output_limits  # (min, max)
+        self.integral = 0
+        self.last_error = 0
+        self.last_time = time.ticks_ms()
+
+    def compute(self, measurement):
+        now = time.ticks_ms()
+        dt = time.ticks_diff(now, self.last_time) / 1000  # convert ms to seconds, we need to make sure that this parameter is not too small
+        #maybe add better error handling for when dt is small in order to avoid division by 0
+        error = self.setpoint - measurement
+
+        # Proportional term
+        P = self.Kp * error
+
+        # Integral term
+        self.integral += error * dt 
+        I = self.Ki * self.integral #the integral is accumulated as sum of error
+
+        # Derivative term
+        derivative = 0
+        if dt > 0:
+            derivative = (error - self.last_error) / dt #approximation of the derivative of an error
+        D = self.Kd * derivative 
+
+        # Save for next iteration
+        self.last_error = error
+        self.last_time = now
+
+        # Compute output and clamp to limits
+        output = P + I + D
+        output = max(self.output_limits[0], min(output, self.output_limits[1]))
+
+        return output
 
 # --- Main ---
 oled = None
@@ -148,6 +188,12 @@ mqtt_client = None
 temp_sens = None
 last_temp_publish_time = 0 
 temp_publish_interval = 30 # We only want a temp readiing every 30 seconds
+#Example constants for the PID controller
+#these need to be from the web server
+Kp = 2.0
+Ki = 0.1
+Kd = 1.0
+target_temp = 17.5
 
 try:
     oled, rgb = init_i2c_devices()
@@ -155,6 +201,7 @@ try:
     last_ping = time.time()
     ping_interval = 60
     temp_sens = read_temp.init_temp_sensor(Temp_PIN)
+    pid_temp = PID(Kp, Ki, Kd, setpoint=target_temp, output_limits=(0, 100))  # 0-100% pump speed
 
     if oled:
         time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
@@ -174,6 +221,15 @@ try:
             try:
                 current_temp = read_temp.read_temp(temp_sens)
                 print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
+
+                # Compute PID output
+                pump_speed = pid_temp.compute(current_temp)
+
+                # Apply the computed speed
+                set_pump_speed(pump_speed)
+
+                # publish PID output
+                mqtt_client.publish(TOPIC_pump_speed.encode(), str(int(pump_speed)))
 
                 if mqtt_client: # Only publish if MQTT client is connected
                     mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
@@ -229,3 +285,4 @@ finally:
         oled.fill(0)
         oled.text("Goodbye", 0, 0)
         oled.show()
+
