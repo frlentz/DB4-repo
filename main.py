@@ -74,11 +74,7 @@ def set_pump_speed(percent):
 # Control submersible pump speed (0–100%)
 def set_sub_pump_speed(percent):
     percent = max(0, min(percent, 100))
-    if percent == 0:
-        pwm_value = 0
-    else:
-        scaled = 0.7 + (percent / 100) * 0.3
-        pwm_value = int(scaled * 1023)  
+    pwm_value = int((percent / 100) * 1023)
     sub_pump_pwm.duty(pwm_value)
     print(f"Submersible pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
@@ -125,14 +121,14 @@ def mqtt_callback(topic, message):
         except ValueError as e: 
             print("Invalid speed value for main pump")
             sys.print_exception(e) #
-'''
+
     elif topic_str == TOPIC_sub_pump_speed:
         try:
             percent = int(msg_str)
             set_sub_pump_speed(percent)
         except:
             print("Invalid speed value for submersible pump")
-'''
+
 
 # --- MQTT Connect ---
 def connect_mqtt():
@@ -160,7 +156,7 @@ class PID:
         now = time.ticks_ms()
         dt = time.ticks_diff(now, self.last_time) / 1000  # convert ms to seconds, we need to make sure that this parameter is not too small
         #maybe add better error handling for when dt is small in order to avoid division by 0
-        error = measurement - self.setpoint 
+        error = self.setpoint - measurement
 
         # Proportional term
         P = self.Kp * error
@@ -194,10 +190,19 @@ last_temp_publish_time = 0
 temp_publish_interval = 30 # We only want a temp readiing every 30 seconds
 #Example constants for the PID controller
 #these need to be from the web server
-Kp = 2.0
-Ki = 0.1
-Kd = 1.0
+
+##### regulate temperature for mussels ####
+Kp_mus = 2.0
+Ki_mus = 0.1
+Kd_mus = 1.0
 target_temp = 17.5
+
+##### regulate algae density ####
+Kp_alg = 2.0
+Ki_alg = 0.1
+Kd_alg = 1.0
+target_abs = 200 #change this
+
 
 try:
     oled, rgb = init_i2c_devices()
@@ -205,7 +210,8 @@ try:
     last_ping = time.time()
     ping_interval = 60
     temp_sens = read_temp.init_temp_sensor(Temp_PIN)
-    pid_temp = PID(Kp, Ki, Kd, setpoint=target_temp, output_limits=(0, 100))  # 0-100% pump speed
+    pid_temp = PID(Kp_mus, Ki_mus, Kd_mus, setpoint=target_temp, output_limits=(0, 100))  # 0-100% pump speed
+    pid_density = PID(Kp_alg, Ki_alg, Kd_alg, setpoint=target_abs, output_limits=(0, 100))  # 0-100% pump speed
 
     if oled:
         time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
@@ -227,13 +233,13 @@ try:
                 print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
 
                 # Compute PID output
-                sub_pump_speed = pid_temp.compute(current_temp)
+                pump_speed_mus = pid_temp.compute(current_temp)
 
                 # Apply the computed speed
-                set_sub_pump_speed(sub_pump_speed)
+                set_pump_speed(pump_speed_mus)
 
                 # publish PID output
-                mqtt_client.publish(TOPIC_pump_speed.encode(), str(int(sub_pump_speed)))
+                mqtt_client.publish(TOPIC_pump_speed.encode(), str(int(pump_speed_mus)))
 
                 if mqtt_client: # Only publish if MQTT client is connected
                     mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
@@ -257,6 +263,15 @@ try:
                 mqtt_client.publish(TOPIC_R.encode(), str(r))
                 mqtt_client.publish(TOPIC_G.encode(), str(g)) 
                 mqtt_client.publish(TOPIC_B.encode(), str(b))
+
+                # Compute PID output
+                pump_speed_alg = pid_density.compute(b)
+
+                # Apply the computed speed
+                set_sub_pump_speed(pump_speed_alg)
+
+                # publish PID output
+                mqtt_client.publish(TOPIC_sub_pump_speed.encode(), str(int(pump_speed_alg)))
 
             except Exception as e:
                 print(f"RGB Sensor Error:") 
