@@ -31,7 +31,7 @@ SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Se
 OLED_addr, RGB_addr = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
 Temp_PIN = 36
-CLIENT_ID = "esp32_rgb_project"
+Client_ID = "esp32_rgb_project"
 AIO_user = config.username # Needs to be configured in config.py
 AIO_key = config.key # Needs to be configured in config.py
 MQTT_broker = "io.adafruit.com"
@@ -57,22 +57,6 @@ pump_pwm.duty(0)  # Start with pump off
 
 sub_pump_pwm = PWM(Pin(32), freq=1000)  # submersible pump on pin 32
 sub_pump_pwm.duty(0)  # Start with pump off
-
-def log_rgb_data(r_val, g_val, b_val, c_val):
-    try:
-        write_header = not Log_file_name in os.listdir() # os.listdir() returns a list of files/directories in the root - it will then check if the file exists to decide if a header is needed
-
-        # Open the file in append mode ('a').
-        with open(Log_file_name, 'a') as f:
-            if write_header:
-                f.write("timestamp,R,G,B,C\n") # Write CSV header
-
-            timestamp = time.time() # Get current timestamp
-            log_line = f"{timestamp},{r_val},{g_val},{b_val},{c_val}\n"
-            f.write(log_line)
-            print(f"Logged to {Log_file_name}: {log_line.strip()}") # Print to console for confirmation
-    except Exception as e:
-        print(f"Error writing to log file: {e}")
 
 
 # --- Pump definitions ---
@@ -127,7 +111,7 @@ def mqtt_callback(topic, message):
     topic_str = topic.decode()
     msg_str = message.decode().lower()
 
-    if topic_str == Topic_LED:
+    if topic_str == TOPIC_LED:
         led.value(1 if msg_str == "on" else 0)
 
     elif topic_str == TOPIC_pump_speed:
@@ -164,6 +148,8 @@ mqtt_client = None
 temp_sens = None
 last_temp_publish_time = 0 
 temp_publish_interval = 30 # We only want a temp readiing every 30 seconds
+data_for_esp=("")
+
 
 try:
     oled, rgb = init_i2c_devices()
@@ -191,6 +177,14 @@ try:
             try:
                 current_temp = read_temp.read_temp(temp_sens)
                 print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
+                data=str(current_temp) 
+                data_for_esp=str(str(time.time()) + ": " + data + ", ")
+
+                #Logging the data
+                f = open('data.txt', 'a')
+                f.write(data_for_esp)
+                f.close()
+
 
                 if mqtt_client: # Only publish if MQTT client is connected
                     mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
@@ -212,13 +206,10 @@ try:
                     oled.show()
 
                 # Publish the RGB values at a safe rate
-                mqtt_client.publish(Topic_R.encode(), str(r))
-                mqtt_client.publish(Topic_G.encode(), str(g)) 
-                mqtt_client.publish(Topic_B.encode(), str(b))
-
-                log_rgb_data(r, g, b, c) # Log the RGB values to CSV file
-                # To get the file use: ampy -p /dev/ttyUSB0 get rgb_sensor_log.csv
-                # To remove the file use: ampy -p /dev/ttyUSB0 rm rgb_sensor_log.csv
+                mqtt_client.publish(TOPIC_R.encode(), str(r))
+                mqtt_client.publish(TOPIC_G.encode(), str(g)) 
+                mqtt_client.publish(TOPIC_B.encode(), str(b))
+                
 
             except Exception as e:
                 print(f"RGB Sensor Error:") 
