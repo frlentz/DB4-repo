@@ -74,7 +74,11 @@ def set_pump_speed(percent):
 # Control submersible pump speed (0–100%)
 def set_sub_pump_speed(percent):
     percent = max(0, min(percent, 100))
-    pwm_value = int((percent / 100) * 1023)
+    if percent == 0:
+        pwm_value = 0
+    else:
+        scaled = 0.7 + (percent / 100) * 0.3
+        pwm_value = int(scaled * 1023)  
     sub_pump_pwm.duty(pwm_value)
     print(f"Submersible pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
@@ -112,7 +116,7 @@ def mqtt_callback(topic, message):
 
     if topic_str == TOPIC_LED:
         led.value(1 if msg_str == "on" else 0)
-
+'''
     elif topic_str == TOPIC_pump_speed:
         try:
             percent = int(msg_str)
@@ -128,7 +132,7 @@ def mqtt_callback(topic, message):
             set_sub_pump_speed(percent)
         except:
             print("Invalid speed value for submersible pump")
-
+'''
 
 # --- MQTT Connect ---
 def connect_mqtt():
@@ -156,7 +160,7 @@ class PID:
         now = time.ticks_ms()
         dt = time.ticks_diff(now, self.last_time) / 1000  # convert ms to seconds, we need to make sure that this parameter is not too small
         #maybe add better error handling for when dt is small in order to avoid division by 0
-        error = self.setpoint - measurement
+        error = measurement - self.setpoint 
 
         # Proportional term
         P = self.Kp * error
@@ -223,13 +227,13 @@ try:
                 print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
 
                 # Compute PID output
-                pump_speed = pid_temp.compute(current_temp)
+                sub_pump_speed = pid_temp.compute(current_temp)
 
                 # Apply the computed speed
-                set_pump_speed(pump_speed)
+                set_sub_pump_speed(sub_pump_speed)
 
                 # publish PID output
-                mqtt_client.publish(TOPIC_pump_speed.encode(), str(int(pump_speed)))
+                mqtt_client.publish(TOPIC_pump_speed.encode(), str(int(sub_pump_speed)))
 
                 if mqtt_client: # Only publish if MQTT client is connected
                     mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
