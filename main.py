@@ -116,7 +116,7 @@ def mqtt_callback(topic, message):
 
     if topic_str == TOPIC_LED:
         led.value(1 if msg_str == "on" else 0)
-'''
+
     elif topic_str == TOPIC_pump_speed:
         try:
             percent = int(msg_str)
@@ -125,7 +125,7 @@ def mqtt_callback(topic, message):
         except ValueError as e: 
             print("Invalid speed value for main pump")
             sys.print_exception(e) #
-
+'''
     elif topic_str == TOPIC_sub_pump_speed:
         try:
             percent = int(msg_str)
