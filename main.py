@@ -49,6 +49,9 @@ TOPIC_B = f"{AIO_user}/feeds/esp32-b"
 TOPIC_pump_speed = f"{AIO_user}/feeds/esp32-pump-speed"
 TOPIC_sub_pump_speed = f"{AIO_user}/feeds/esp32-sub-pump-speed"  
 TOPIC_temp = f"{AIO_user}/feeds/esp32-temp"
+TOPIC_P = f"{AIO_user}/feeds/esp32-p"
+TOPIC_I = f"{AIO_user}/feeds/esp32-i"
+TOPIC_D = f"{AIO_user}/feeds/esp32-d"
 
 
 # --- Pin setup ---
@@ -130,16 +133,32 @@ def mqtt_callback(topic, message):
 
         except ValueError as e: 
             print("Invalid speed value for main pump")
-            sys.print_exception(e) #
+            sys.print_exception(e) 
 
-'''
-    elif topic_str == TOPIC_sub_pump_speed:
+    elif topic_str == TOPIC_P:
         try:
-            percent = int(msg_str)
-            set_sub_pump_speed(percent)
-        except:
-            print("Invalid speed value for submersible pump")
-'''
+            pid_temp.Kp = float(msg_str)
+            print(f"P coefficient set to {pid_temp.Kp}")
+        except ValueError as e:
+            print("Invalid Kp value")
+            sys.print_exception(e)
+
+    elif topic_str == TOPIC_I:
+        try:
+            pid_temp.Ki = float(msg_str)
+            print(f"I coefficient set to {pid_temp.Ki}")
+        except ValueError as e:
+            print("Invalid Ki value")
+            sys.print_exception(e)
+
+    elif topic_str == TOPIC_D:
+        try:
+            pid_temp.Kd = float(msg_str)
+            print(f"D coefficient set to {pid_temp.Kd}")
+        except ValueError as e:
+            print("Invalid Kd value")
+            sys.print_exception(e)
+
 # --- MQTT Connect ---
 def connect_mqtt():
     client = MQTTClient(Client_ID, MQTT_broker, port=MQTT_port, user=AIO_user, password=AIO_key)
@@ -148,6 +167,9 @@ def connect_mqtt():
     client.subscribe(TOPIC_LED.encode())
     client.subscribe(TOPIC_pump_speed.encode())
     client.subscribe(TOPIC_sub_pump_speed.encode())
+    client.subscribe(TOPIC_P.encode())
+    client.subscribe(TOPIC_I.encode())
+    client.subscribe(TOPIC_D.encode())
     return client
 
 # --- PID controller ---
@@ -235,33 +257,38 @@ oled = None
 rgb = None
 mqtt_client = None
 temp_sens = None
-last_temp_publish_time = 0 
-temp_publish_interval = 30 # We only want a temp readiing every 30 seconds
-data_for_esp=("")
 
-#Example constants for the PID controller
-#these need to be from the web server
+# Timing variables
+last_temp_read_time = 0
+temp_read_interval = 5 # Read temperature every 5 seconds
 
-##### regulate temperature for mussels ####
+last_rgb_read_time = 0
+rgb_read_interval = 5 # Read RGB every 5 seconds
+
+last_adafruit_publish_time = 0
+adafruit_publish_interval = 15 # Publish to Adafruit every 15 seconds
+
+last_ping = time.time()
+ping_interval = 60 # MQTT Pings every 60 seconds
+
+# Variables to hold the latest sensor readings and pump speed
+latest_temp = None
+latest_sub_pump_speed = 0
+latest_r, latest_g, latest_b, latest_c = 0, 0, 0, 0
+
+
+# Example constants for the PID controller
 Kp_mus = 2.0
 Ki_mus = 0.1
 Kd_mus = 1.0
 target_temp = 20.5
 
-##### regulate algae density ####
-Kp_alg = 2.0
-Ki_alg = 0.1
-Kd_alg = 1.0
-target_abs = 200 #change this
-
 
 try:
     oled, rgb = init_i2c_devices()
     mqtt_client = connect_mqtt()
-    last_ping = time.time()
-    ping_interval = 60
     temp_sens = read_temp.init_temp_sensor(Temp_PIN)
-    pid_temp = PID(Kp_mus, Ki_mus, Kd_mus, setpoint=target_temp, output_limits=(0, 100))  # 0-100% pump speed
+    pid_temp = PID(Kp_mus, Ki_mus, Kd_mus, setpoint=target_temp, output_limits=(0, 100))
 
     if oled:
         time.sleep(3) # Lets the OLED "Starting..." message show for 3 seconds
@@ -269,82 +296,99 @@ try:
     while True:
         mqtt_client.check_msg()
 
-        # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
+        # --- MQTT Ping (runs independently every 60 seconds) ---
         if (time.time() - last_ping) > ping_interval:
             mqtt_client.ping()
             last_ping = time.time()
 
+        # --- OLED Time Update all the time ---
         if oled:
-            oled.fill(0) # Clears display (black background)
+            oled.fill(0) # Clears display
             oled.text("Time: " + str(int(time.time())), 0, 0)
 
-        if temp_sens and (time.time() - last_temp_publish_time) > temp_publish_interval:
+
+        # --- Temperature Sensor Reading & Pump Control every 5 seconds ---
+        if temp_sens and (time.time() - last_temp_read_time) > temp_read_interval:
             try:
                 current_temp = read_temp.read_temp(temp_sens)
-                print(f"Current Temperature: {current_temp:.2f} °C") # Print to console
-
-                # Compute PID output
-                sub_pump_speed = pid_temp.compute(current_temp)
-
-                # Apply the computed speed
-                set_sub_pump_speed(sub_pump_speed)
-
-                # publish PID output
-                mqtt_client.publish(TOPIC_sub_pump_speed.encode(), str(int(sub_pump_speed)))
-                data=str(current_temp) 
-                data_for_esp=str(str(time.time()) + ": " + data + ", ")
-
-                #Logging the data
-                f = open('data.txt', 'a')
-                f.write(data_for_esp)
-                f.close() 
-                # To see it: >>> f = open("data.txt")  >>> f.read(
-
-
-                if mqtt_client: # Only publish if MQTT client is connected
-                    mqtt_client.publish(TOPIC_temp.encode(), str(f"{current_temp:.2f}"))
+                print(f"Current Temperature: {current_temp:.2f} °C")
                 
-                last_temp_publish_time = time.time() # Update the timer after successful read/publish
+                # Compute PID output for submersible pump based on temperature
+                sub_pump_speed_calculated = pid_temp.compute(current_temp)
+
+                # Apply the computed speed IMMEDIATELY after calculation
+                set_sub_pump_speed(sub_pump_speed_calculated)
+                
+                # Store latest values for later publishing to Adafruit
+                latest_temp = current_temp
+                latest_sub_pump_speed = sub_pump_speed_calculated
+
+                # Log temperature data to file immediately after reading
+                data_for_log = str(f"{int(time.time())}: {current_temp:.2f}, ")
+                with open('data.txt', 'a') as f:
+                    f.write(data_for_log)
+
+                last_temp_read_time = time.time()
 
             except Exception as e:
                 print(f"Temperature Sensor Error:")
-                sys.print_exception(e) 
-
-
-        if rgb: 
-            try:
-                r, g, b, c = rgb.read(raw=True) # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
-                                                # they range from 0 (no light detected) up to 65535 (maximum light detected).
-                
-                # === Log RGB data for algae analysis ===
-                timestamp = int(time.time())
-                rgb_log_entry = f"{timestamp},{r},{g},{b},{c}\n"
-                with open("rgb_log.csv", "a") as rgb_file:
-                    rgb_file.write(rgb_log_entry)
-
+                sys.print_exception(e)
+                # You might want to update OLED here too for errors
                 if oled:
-                    oled.text(f"R:{r} G:{g}", 0, 16) # Red, Green, Blue, and Clear values
-                    oled.text(f"B:{b} C:{c}", 0, 32)
+                    oled.text("Temp Error", 0, 48) # Display error on OLED
                     oled.show()
 
-                # Publish the RGB values at a safe rate
-                mqtt_client.publish(TOPIC_R.encode(), str(r))
-                mqtt_client.publish(TOPIC_G.encode(), str(g)) 
-                mqtt_client.publish(TOPIC_B.encode(), str(b))
 
+        # --- RGB Sensor Reading Every 5 seconds ---
+        if rgb and (time.time() - last_rgb_read_time) > rgb_read_interval:
+            try:
+                r, g, b, c = rgb.read(raw=True)
+                
+                # Store latest values for later publishing to Adafruit
+                latest_r, latest_g, latest_b, latest_c = r, g, b, c
+
+                # Update OLED with RGB data immediately after reading
+                if oled:
+                    oled.text(f"R:{r} G:{g}", 0, 16)
+                    oled.text(f"B:{b} C:{c}", 0, 32)
+                    oled.show() # Update OLED with current time, then with RGB
+                
+                # Log RGB data to file immediately after reading
+                rgb_log_entry = f"{int(time.time())},{r},{g},{b},{c}\n"
+                file = open("rgb_log.csv", "a")  #or data.txt?
+                file.write(rgb_log_entry)
+
+                last_rgb_read_time = time.time()
 
             except Exception as e:
-                print(f"RGB Sensor Error:") 
-                sys.print_exception(e) 
+                print(f"RGB Sensor Error:")
+                sys.print_exception(e)
                 if oled:
                     oled.text("RGB Error", 0, 16)
+                    oled.show()
 
-        # This part is to send keep-alive pings to the MQTT broker so the connection stays alive
-        sleep_duration = 15
-        sleep_start = time.time()
-        while time.time() - sleep_start < sleep_duration:
-            mqtt_client.check_msg()
-            time.sleep(0.2)
+
+        # --- Adafruit Publishing every 15 seconds ---
+        if mqtt_client and (time.time() - last_adafruit_publish_time) > adafruit_publish_interval:
+            
+            # Publish last known temperature if available
+            if latest_temp is not None:
+                mqtt_client.publish(TOPIC_temp.encode(), str(f"{latest_temp:.2f}"))
+                mqtt_client.publish(TOPIC_sub_pump_speed.encode(), str(int(latest_sub_pump_speed)))
+            
+            # Publish last known RGB values if available
+            # Check if latest_r is not 0 (initial value) or if r has been updated.
+            # Using 'is not None' for latest_temp is better if 0 is a valid reading.
+            # For RGB, checking if latest_r > 0 might be better if 0,0,0,0 is "not read yet".
+            if latest_r > 0 or latest_g > 0 or latest_b > 0 or latest_c > 0: 
+                mqtt_client.publish(TOPIC_R.encode(), str(latest_r))
+                mqtt_client.publish(TOPIC_G.encode(), str(latest_g))
+                mqtt_client.publish(TOPIC_B.encode(), str(latest_b))
+
+            last_adafruit_publish_time = time.time()
+            print("--- Data published to Adafruit ---") # Optional: confirm publish cycle
+
+        time.sleep_ms(50) # Sleep for 50 milliseconds to yield CPU which is apparently important
 
 except Exception as e:
     print("Fatal Error caught in main loop:") 
