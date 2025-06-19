@@ -261,6 +261,13 @@ try:
             try:
                 r, g, b, c = rgb.read(raw=True) # These are the direct 16-bit numbers that the sensor's Analog-to-Digital Converter (ADC) produces for each color channel (Red, Green, Blue) and the Clear (unfiltered) channel.
                                                 # they range from 0 (no light detected) up to 65535 (maximum light detected).
+                
+                # === Log RGB data for algae analysis ===
+                timestamp = int(time.time())
+                rgb_log_entry = f"{timestamp},{r},{g},{b},{c}\n"
+                with open("rgb_log.csv", "a") as rgb_file:
+                    rgb_file.write(rgb_log_entry)
+
                 if oled:
                     oled.text(f"R:{r} G:{g}", 0, 16) # Red, Green, Blue, and Clear values
                     oled.text(f"B:{b} C:{c}", 0, 32)
