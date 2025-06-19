@@ -31,6 +31,8 @@ SCL_PIN, SDA_PIN = 22, 23 # I2C pins for the OLED (SCL=Serial Clock Line, SDA=Se
 OLED_addr, RGB_addr = 0x3c, 0x29 # hexidecimal addresses for the I2C devices (when scanning using i2c.scan() it gives us 61 and 40)
 LED_PIN = 13
 Temp_PIN = 36
+Cooler_PIN = 27
+Fan_PIN = 12
 Client_ID = "esp32_rgb_project"
 AIO_user = config.username # Needs to be configured in config.py
 AIO_key = config.key # Needs to be configured in config.py
@@ -52,6 +54,8 @@ TOPIC_temp = f"{AIO_user}/feeds/esp32-temp"
 # --- Pin setup ---
 led = Pin(LED_PIN, Pin.OUT)
 led.value(0)
+cooler = Pin(Cooler_PIN, Pin.OUT)  # Cooler pin
+fan = Pin(Fan_PIN, Pin.OUT)  # Fan pin
 pump_pwm = PWM(Pin(33), freq=1000)  # 1 kHz PWM on pin 33
 pump_pwm.duty(0)  # Start with pump off
 
@@ -208,6 +212,14 @@ class PID:
         self.last_error = error
         self.last_time = now
         self.last_output = clamped_output
+
+        if current_temp <= self.setpoint:
+            cooler.value(0)
+            fan.value(0)
+        else:
+            cooler.value(1)
+            fan.value(1)
+
 
         # --- DEBUG PRINTS START (at end of compute) ---
         print(f"  Error={error:.2f}, dt={dt:.2f}, Integral={self.integral:.2f}")
