@@ -2,12 +2,10 @@ import network
 import sys
 import time
 from machine import Pin, I2C, PWM, ADC
-import math
 from umqttsimple import MQTTClient
 import config
 from Learn import ssd1306
 from Learn import tcs34725
-import os
 from Learn import read_temp
 
 # --- Wi-Fi Setup ---
@@ -18,11 +16,16 @@ wifi = network.WLAN(network.STA_IF)
 wifi.active(True)
 wifi.connect(config.wifi_id, config.wifi_password)
 
+
+wifi_connecting_time = 0
 print("Connecting to WiFi...", end="")
+
 while not wifi.isconnected():
     print(".", end="")
+    wifi_connecting_time += 1
     time.sleep(1)
 print("\nWiFi connected" if wifi.isconnected() else "\nFailed to connect")
+
 
 
 # --- Constants ---
