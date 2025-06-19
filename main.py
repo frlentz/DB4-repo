@@ -78,7 +78,7 @@ def set_sub_pump_speed(percent):
     if percent == 0:
         pwm_value = 0
     else:
-        scaled = 0.7 + (percent / 100) * 0.3
+        scaled = 0.2 + (percent / 100) * 0.8  # remap scaled range from 20-100% of total PWM range
         pwm_value = int(scaled * 1023)  
     sub_pump_pwm.duty(pwm_value)
     print(f"Submersible pump speed set to {percent}% → PWM: {pwm_value}/1023")
