@@ -220,12 +220,13 @@ class PID:
             cooler.value(1)
             fan.value(1)
 
-
+        '''
         # --- DEBUG PRINTS START (at end of compute) ---
         print(f"  Error={error:.2f}, dt={dt:.2f}, Integral={self.integral:.2f}")
         print(f"  P={P:.2f}, I={I:.2f}, D={D:.2f}")
         print(f"  Unclamped Output={unclamped_output:.2f}, Clamped Output={clamped_output:.2f}")
         # --- DEBUG PRINTS END ---
+        '''
 
         return clamped_output
 
