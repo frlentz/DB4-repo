@@ -9,6 +9,8 @@ from Learn import ssd1306
 from Learn import tcs34725
 import os
 from Learn import read_temp
+import pid_data_logger
+
 
 # --- Wi-Fi Setup ---
 ap_if = network.WLAN(network.AP_IF)
@@ -365,3 +367,23 @@ finally:
         oled.text("Goodbye", 0, 0)
         oled.show()
 
+if __name__ == "__main__":
+    run_step_response_test = True  # Set to False later to return to full system
+
+    if run_step_response_test:
+        import pid_data_logger  # This runs the step logger
+    else:
+        try:
+            print("Starting full system (not currently active)...")
+            # You would place your full system logic here:
+            # init devices, MQTT, OLED, PID, etc.
+            while True:
+                time.sleep(1)  # Placeholder loop
+
+        except Exception as e:
+            print("Error in full system loop:")
+            sys.print_exception(e)
+
+        finally:
+            print("Shutting down system safely.")
+        pass  # (keep or insert your real full system logic here)
