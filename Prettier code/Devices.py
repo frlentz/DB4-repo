@@ -3,6 +3,7 @@ from Learn import tcs34725
 from Learn import ssd1306
 
 class motors:
+    @staticmethod
     def set_pump_speed(percent, pump_pwm):
         percent = max(0, min(percent, 100))
         # Remap to usable PWM range: 0–100% → 0.7–1.0
@@ -14,7 +15,7 @@ class motors:
         pump_pwm.duty(pwm_value)
         print(f"Pump speed set to {percent}% → PWM: {pwm_value}/1023")
 
-
+    @staticmethod
     def set_sub_pump_speed(percent, sub_pump_pwm):
         percent = max(0, min(percent, 100))
         # Remap to usable PWM range: 0–100% → 0.3–1
@@ -29,6 +30,7 @@ class motors:
 
 
 class I2Cs:
+    @staticmethod
     def init_i2c_devices(SCL_PIN, SDA_PIN, OLED_addr, RGB_addr, OLED_width=128, OLED_height=64):
         i2c = I2C(1, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=400000) # Initializing the I2C bus once for all devices
         oled = None
