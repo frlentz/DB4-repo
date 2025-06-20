@@ -188,11 +188,13 @@ class PID:
     def compute(self, measurement):
         now = time.ticks_ms()
         dt = time.ticks_diff(now, self.last_time) / 1000
-
+        
+        '''
         # --- DEBUG PRINTS START (at start of compute) ---
         print(f"PID Debug (Setpoint={self.setpoint:.2f}, Meas={measurement:.2f}):")
         # --- DEBUG PRINTS END ---
-
+        '''
+        
         if dt == 0:
             print("  dt=0, returning last output.")
             return self.last_output
