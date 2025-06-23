@@ -3,7 +3,7 @@ import sys
 import time
 from machine import Pin, I2C, PWM, ADC
 import math
-from umqttsimple import MQTTClient
+from Learn.umqttsimple import MQTTClient
 import config
 from Learn import ssd1306
 from Learn import tcs34725
@@ -189,9 +189,6 @@ class PID:
         now = time.ticks_ms()
         dt = time.ticks_diff(now, self.last_time) / 1000
 
-        # --- DEBUG PRINTS START (at start of compute) ---
-        print(f"PID Debug (Setpoint={self.setpoint:.2f}, Meas={measurement:.2f}):")
-        # --- DEBUG PRINTS END ---
 
         if dt == 0:
             print("  dt=0, returning last output.")
@@ -237,10 +234,10 @@ class PID:
 
         if current_temp <= self.setpoint:
             cooler.value(0)
-            fan.value(0)
+            fan.value(1)
         else:
             cooler.value(1)
-            fan.value(1)
+            fan.value(0)
 
         '''
         # --- DEBUG PRINTS START (at end of compute) ---
@@ -278,10 +275,10 @@ latest_r, latest_g, latest_b, latest_c = 0, 0, 0, 0
 
 
 # Example constants for the PID controller
-Kp_mus = 2.0
-Ki_mus = 0.1
-Kd_mus = 1.0
-target_temp = 20.5
+Kp_mus = 10
+Ki_mus = 0
+Kd_mus = 0
+target_temp = 19.5
 
 
 try:
@@ -324,9 +321,10 @@ try:
                 latest_sub_pump_speed = sub_pump_speed_calculated
 
                 # Log temperature data to file immediately after reading
-                data_for_log = str(f"{int(time.time())}: {current_temp:.2f}, ")
-                with open('data.txt', 'a') as f:
-                    f.write(data_for_log)
+                temp_log_entry = f"{int(time.time())},{current_temp}\n"
+                f = open('temp_log.csv', 'a') 
+                f.write(temp_log_entry)
+                f.close()
 
                 last_temp_read_time = time.time()
 
@@ -355,8 +353,9 @@ try:
                 
                 # Log RGB data to file immediately after reading
                 rgb_log_entry = f"{int(time.time())},{r},{g},{b},{c}\n"
-                file = open("rgb_log.csv", "a")  #or data.txt?
+                file = open("rgb_log.csv", "a")
                 file.write(rgb_log_entry)
+                file.close()
 
                 last_rgb_read_time = time.time()
 
@@ -366,7 +365,7 @@ try:
                 if oled:
                     oled.text("RGB Error", 0, 16)
                     oled.show()
-
+        
 
         # --- Adafruit Publishing every 15 seconds ---
         if mqtt_client and (time.time() - last_adafruit_publish_time) > adafruit_publish_interval:

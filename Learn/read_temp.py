@@ -2,6 +2,7 @@ from machine import Pin
 from machine import ADC
 from machine import DAC
 from math import log
+import time
 
 import machine
 import utime
